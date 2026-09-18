@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "kenda",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["_dev/devserver.py", "8770"],
+      "port": 8770
+    }
+  ]
+}

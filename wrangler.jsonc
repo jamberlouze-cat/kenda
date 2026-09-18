@@ -1,0 +1,18 @@
+// Configuration Cloudflare (Workers avec fichiers statiques).
+// Le site est 100 % statique : tout le dossier est servi tel quel, sauf ce qui
+// est listé dans .assetsignore. worker.js n'ajoute que la tâche planifiée qui
+// garde Supabase éveillé et l'adresse de vérification /_ping.
+{
+  "$schema": "https://unpkg.com/wrangler/config-schema.json",
+  "name": "kenda",
+  "compatibility_date": "2026-09-01",
+  "main": "worker.js",
+  "assets": {
+    "directory": "./",
+    "not_found_handling": "none"
+  },
+  "triggers": {
+    // Quatre fois par jour (Supabase veut « quelques requêtes chaque jour »).
+    "crons": ["0 2,8,14,20 * * *"]
+  }
+}

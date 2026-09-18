@@ -1,0 +1,29 @@
+# Garde le projet Supabase (offre gratuite) éveillé : quelques requêtes à la
+# base chaque jour, sinon il est mis en pause après 7 jours. Doublon volontaire
+# du cron de worker.js — deux gardiens indépendants valent mieux qu'un.
+# Adresse et clé publique sont lues dans lib/config.js (rien de secret).
+# (Les workflows planifiés ne tournent que sur la branche main.)
+name: Supabase — garde-éveil
+
+on:
+  schedule:
+    - cron: "41 5,13,21 * * *"   # trois fois par jour (UTC)
+  workflow_dispatch:             # bouton « Run workflow » pour tester
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trois petites requêtes REST
+        run: |
+          set -eu
+          URL=$(grep -o 'SUPABASE_URL = "[^"]*"' lib/config.js | cut -d'"' -f2)
+          KEY=$(grep -o 'SUPABASE_ANON_KEY = "[^"]*"' lib/config.js | cut -d'"' -f2)
+          for table in babies caregivers feeds; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' \
+              -H "apikey: $KEY" -H "Authorization: Bearer $KEY" \
+              "$URL/rest/v1/$table?select=id&limit=1")
+            echo "$table → $code"
+            [ "$code" = "200" ] || exit 1
+          done

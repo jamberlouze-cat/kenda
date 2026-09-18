@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+  <title>Kenda — banc d'essai</title>
+  <base href="../">
+  <link rel="icon" href="assets/icon-dev.svg" type="image/svg+xml">
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400&family=Nunito:wght@700;800&family=Nunito+Sans:opsz,wght@6..12,400;6..12,600;6..12,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <!-- Banc d'essai : la VRAIE app.js avec un faux Supabase en mémoire (aucun
+       service worker, aucune donnée réelle). ?fresh=1 réinitialise les données
+       de démo ; ?fresh=empty démarre sans bébé ; ?fresh=auth démarre déconnecté. -->
+  <div id="app"><div class="loading-screen"><div class="spinner"></div></div></div>
+  <script>window.KENDA_DEV = true;</script>
+  <script src="_dev/fake-supabase.js"></script>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

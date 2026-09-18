@@ -1,0 +1,14 @@
+# Fichiers du dépôt à ne pas publier sur Cloudflare.
+.git
+.gitignore
+.claude
+.github
+_dev
+*.sql
+README.md
+wrangler.jsonc
+worker.js
+.assetsignore
+.DS_Store
+.wrangler/
+node_modules/
