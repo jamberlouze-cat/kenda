@@ -28,7 +28,7 @@ const state = {
   syncedAt: null,
   pending: queue.size(),
   listOpen: true,       // accueil : derniers boires dépliés
-  range: "day",         // day | week | 2weeks
+  range: "week",        // day | week | 2weeks
   metric: "total",      // total | count | interval
   sheet: null,
   authError: "", recovery: false, error: "",
@@ -344,6 +344,39 @@ function patternCard() {
     </section>`;
 }
 
+/** Calendrier de la dernière semaine : une colonne par jour, l'axe des heures
+ *  de haut en bas, un trait par boire. Les habitudes (et les nuits) sautent aux yeux. */
+function weekCalendarCard() {
+  const now = new Date(), feeds = babyFeeds();
+  const days = Array.from({ length: 7 }, (_, i) => addDays(startOfDay(now), i - 6));
+  const minuteOf = (d) => { const x = new Date(d); return x.getHours() * 60 + x.getMinutes(); };
+  const pct = (min) => `${(min / 1440) * 100}%`;
+  const head = days.map((d, i) => `
+    <div class="cal-day ${i === 6 ? "today" : ""}"><span>${esc(fr(d, { weekday: "short" }).replace(".", ""))}</span><b>${d.getDate()}</b></div>`).join("");
+  const cols = days.map((d, i) => {
+    const key = dayKey(d);
+    const marks = feeds.filter((f) => dayKey(f.started_at) === key).map((f) =>
+      `<button class="cal-mark ${f.kind}" style="top:${pct(minuteOf(f.started_at))}" data-action="edit-feed" data-id="${f.id}"
+        aria-label="${esc(`${fmtTime(f.started_at)}, ${amount(f.amount_ml)}`)}"></button>`).join("");
+    return `<div class="cal-col ${i === 6 ? "today" : ""}">${marks}${i === 6 ? `<span class="cal-now" style="top:${pct(minuteOf(now))}"></span>` : ""}</div>`;
+  }).join("");
+  const hours = [0, 3, 6, 9, 12, 15, 18, 21, 24];
+  return `<section class="card cal-card">
+      <div class="section-head"><h2>La semaine</h2><span class="meta">touche un trait pour le modifier</span></div>
+      <div class="cal-head"><span></span>${head}</div>
+      <div class="cal-body">
+        <div class="cal-axis">${hours.map((h) => `<span style="top:${pct(h * 60)}">${h} h</span>`).join("")}</div>
+        <div class="cal-grid">
+          <span class="cal-night" style="top:0;height:${pct(6 * 60)}"></span>
+          <span class="cal-night" style="top:${pct(20 * 60)};bottom:0"></span>
+          ${hours.slice(1, -1).map((h) => `<span class="cal-line" style="top:${pct(h * 60)}"></span>`).join("")}
+          ${cols}
+        </div>
+      </div>
+      ${enabledKinds().length > 1 ? `<p class="cal-legend meta"><i class="maternel"></i> Maternel <i class="formule"></i> Formule</p>` : ""}
+    </section>`;
+}
+
 function viewHistory() {
   const now = new Date();
   const days = state.range === "day" ? 1 : state.range === "week" ? 7 : 14;
@@ -359,6 +392,7 @@ function viewHistory() {
     : `<div class="empty">Aucun boire ${days === 1 ? "aujourd'hui" : "sur cette période"}.</div>`;
   return `
     <div class="segmented">${seg("day", "Jour")}${seg("week", "Semaine")}${seg("2weeks", "2 semaines")}</div>
+    ${state.range === "week" ? weekCalendarCard() : ""}
     ${compareCard()}
     ${chartCard()}
     ${patternCard()}
