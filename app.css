@@ -276,8 +276,11 @@ html.sheet-open, html.sheet-open body { overflow: hidden; }
 .band-save { width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center; color: var(--mauve-deep); background: var(--cream); }
 .band-save .ic { width: 24px; height: 24px; stroke-width: 2.2; }
 .form-row { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 68px; padding: 10px 20px; border-bottom: 1px solid var(--cream-line); }
-.row-label { font-family: var(--font-display); font-weight: 300; font-size: 20px; color: var(--lilac-dark); white-space: nowrap; }
+.row-label { font-family: var(--font-display); font-weight: 300; font-size: 19px; color: var(--lilac-dark); white-space: nowrap; }
 .row-value { font-size: 17px; color: var(--blue-dark); text-align: right; }
+.form-row { flex-wrap: wrap; }
+.when { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.when-part { position: relative; display: inline-flex; align-items: center; min-height: 40px; padding: 0 11px; border-radius: 999px; background: var(--blue-soft); color: var(--blue-dark); font-size: 15px; font-weight: 600; white-space: nowrap; }
 .row-cover { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; border: 0; padding: 0; }
 .row-amount { display: flex; align-items: baseline; gap: 6px; }
 .row-amount input { width: 110px; border: 0; background: transparent; padding: 6px 0; text-align: right; font: 800 26px var(--font-num); color: var(--text); border-radius: 0; }

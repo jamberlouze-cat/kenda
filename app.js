@@ -116,6 +116,9 @@ const plural = (n, word) => `${n} ${word}${n > 1 ? "s" : ""}`;
 
 // ================================================================== RENDU ===
 function render(view) {
+  // Changement d'écran : ranger le clavier et repartir du haut. Sur iOS, le
+  // clavier de l'écran précédent laisse sinon la page décalée (en-tête coupé).
+  if (view && view !== state.view) { document.activeElement?.blur?.(); resetScroll(); }
   if (view) state.view = view;
   const v = state.view;
   if (v === "loading") app.innerHTML = `<div class="loading-screen"><div class="spinner"></div></div>`;
@@ -126,6 +129,17 @@ function render(view) {
   else if (v === "error") app.innerHTML = viewError();
   else renderApp();
 }
+
+function resetScroll() {
+  window.scrollTo(0, 0);
+  setTimeout(() => { if (!state.sheet) window.scrollTo(0, window.scrollY > 0 && document.documentElement.scrollHeight <= window.innerHeight + 1 ? 0 : window.scrollY); }, 350);
+}
+// Le clavier se referme : si la page n'a rien à faire défiler, iOS peut la
+// laisser décalée quand même. On la remet en place.
+document.addEventListener("focusout", () => setTimeout(() => {
+  if (state.sheet || document.activeElement?.matches?.("input, select, textarea")) return;
+  if (document.documentElement.scrollHeight <= window.innerHeight + 1) window.scrollTo(0, 0);
+}, 300));
 
 /** Coquille de l'app : en-tête, bandeau réseau, contenu, bouton +, barre du bas. */
 function renderApp() {
@@ -553,13 +567,30 @@ function openFeedSheet(feed) {
   if (!feed) $("#feed-amount")?.focus({ preventScroll: true });
 }
 
-function timeLabel(d) {
-  const x = d || new Date();
-  return `${dayLabel(x)} ${fmtTime(x)}`;
+// Heure de début = un jour (menu natif) + une heure (roulette native de l'iPhone).
+// Un champ « date et heure » combiné ouvre sur iOS un calendrier, pas la roulette.
+const DAY_CHOICES = 7;
+const hhmm = (d) => `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+/** « Aujourd'hui », « Hier », puis court : « jeu. 17 sept. » (la ligne est étroite). */
+function shortDay(d, now = new Date()) {
+  const ago = daysAgo(d, now);
+  return ago === 0 ? "Aujourd'hui" : ago === 1 ? "Hier" : fr(new Date(d), { weekday: "short", day: "numeric", month: "short" });
 }
-function toLocalInput(d) {
-  const p = (n) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+const daysAgo = (d, now = new Date()) => Math.round((startOfDay(now) - startOfDay(d)) / DAY);
+
+/** Lit les deux champs et met à jour l'heure du boire et les libellés. */
+function readWhen() {
+  const s = state.sheet, dayEl = $("#feed-day"), timeEl = $("#feed-time");
+  if (!s || !dayEl || !timeEl) return;
+  const now = new Date();
+  const [h, m] = (timeEl.value || hhmm(now)).split(":").map(Number);
+  let ago = Number(dayEl.value) || 0;
+  const build = () => { const d = addDays(startOfDay(now), -ago); d.setHours(h, m, 0, 0); return d; };
+  // 23 h 50 choisi peu après minuit : c'était forcément hier.
+  if (ago === 0 && build() > new Date(now.getTime() + 2 * 60000)) { ago = 1; dayEl.value = "1"; }
+  s.time = build();
+  $("#feed-day-label").textContent = shortDay(s.time, now);
+  $("#feed-time-label").textContent = fmtTime(s.time);
 }
 
 function sheetFeed() {
@@ -569,6 +600,10 @@ function sheetFeed() {
   const now = new Date();
   const existing = s.id ? state.feeds.find((f) => f.id === s.id) : null;
   const last = lastFeed(babyFeeds(), now);
+
+  const when = s.time || now, ago = Math.max(0, daysAgo(when, now));
+  const dayOptions = Array.from({ length: Math.max(DAY_CHOICES, ago + 1) }, (_, i) =>
+    `<option value="${i}" ${i === ago ? "selected" : ""}>${esc(capitalize(dayLabel(addDays(now, -i), now)))}</option>`).join("");
 
   // Passation : si l'autre parent vient tout juste de noter un boire, on le dit.
   let warn = "";
@@ -583,11 +618,15 @@ function sheetFeed() {
       <button class="band-save" data-action="save-feed" aria-label="Enregistrer">${icon("check")}</button>
     </div>
     ${warn}
-    <label class="form-row">
+    <div class="form-row">
       <span class="row-label">Heure de début</span>
-      <span class="row-value" id="feed-time-label">${esc(timeLabel(s.time))}</span>
-      <input type="datetime-local" class="row-cover" id="feed-time" value="${toLocalInput(s.time || now)}" max="${toLocalInput(now)}" data-change="feed-time" aria-label="Heure de début du boire">
-    </label>
+      <span class="when">
+        <label class="when-part"><span id="feed-day-label">${esc(shortDay(when, now))}</span>
+          <select id="feed-day" class="row-cover" data-change="feed-when" aria-label="Jour du boire">${dayOptions}</select></label>
+        <label class="when-part"><span id="feed-time-label">${fmtTime(when)}</span>
+          <input type="time" id="feed-time" class="row-cover" value="${hhmm(when)}" data-change="feed-when" aria-label="Heure de début du boire"></label>
+      </span>
+    </div>
     ${showKinds ? `<div class="form-row">
       <span class="row-label">Type</span>
       <span class="pillrow tight">${kindList.map((k) =>
@@ -1086,12 +1125,7 @@ document.addEventListener("click", async (e) => {
 
 document.addEventListener("change", (e) => {
   const kind = e.target?.dataset?.change;
-  if (kind === "feed-time" && state.sheet?.type === "feed") {
-    const d = new Date(e.target.value);
-    if (isNaN(d)) return;
-    state.sheet.time = d;
-    $("#feed-time-label").textContent = timeLabel(d);
-  }
+  if (kind === "feed-when" && state.sheet?.type === "feed") readWhen();
   if (kind === "baby-photo") {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -1105,23 +1139,17 @@ document.addEventListener("change", (e) => {
   }
 });
 
-// Heure de début : le champ natif est invisible, posé par-dessus la ligne.
-// Sur iPhone, le toucher ouvre la roulette tout seul ; sur ordinateur, un champ
-// invisible ne montre rien : on demande donc au navigateur d'ouvrir son sélecteur.
+// Sur ordinateur (souris), un champ invisible ne montre rien au clic : on
+// demande au navigateur d'ouvrir son sélecteur. Sur iPhone, le toucher suffit.
 document.addEventListener("click", (e) => {
-  const field = e.target.closest?.(".form-row")?.querySelector("#feed-time");
-  if (!field) return;
+  const field = e.target.closest?.(".when-part")?.querySelector("#feed-time");
+  if (!field || !matchMedia("(pointer: fine)").matches) return;
   try { field.showPicker?.(); } catch { field.focus(); }
 });
 
 document.addEventListener("input", (e) => {
-  // Certains navigateurs n'envoient « change » qu'à la fermeture du sélecteur : on suit aussi « input ».
-  if (e.target?.id === "feed-time" && state.sheet?.type === "feed") {
-    const d = new Date(e.target.value);
-    if (!isNaN(d)) { state.sheet.time = d; $("#feed-time-label").textContent = timeLabel(d); }
-    return;
-  }
-
+  // La roulette envoie « input » à chaque cran, « change » seulement à la fermeture.
+  if (e.target?.id === "feed-time" && state.sheet?.type === "feed") { readWhen(); return; }
   if (e.target?.dataset?.input !== "feed-amount") return;
   const v = cleanAmount(e.target.value);
   if (v !== e.target.value) e.target.value = v;
