@@ -664,7 +664,6 @@ function pickBaby(id) {
   if (!state.babies.some((b) => b.id === id)) return;
   state.babyId = id; babyMemory.set(id);
   if (state.sheet) closeSheet();
-  state.tab = state.tab === "settings" ? "settings" : state.tab;
   saveSnapshot();
   renderApp();
   window.scrollTo(0, 0);
