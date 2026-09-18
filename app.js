@@ -2,8 +2,8 @@ import { supabase } from "./lib/supabase.js";
 import { isConfigured, SUPABASE_URL } from "./lib/config.js";
 import { queue, snapshot, babyMemory, nameMemory, applyQueue } from "./lib/store.js";
 import {
-  toUnit, fromUnit, formatAmount, startOfDay, addDays, dayKey, sortDesc,
-  totalToday, totalLast24h, countBetween, lastFeed, formatElapsed,
+  fromUnit, formatAmount, startOfDay, addDays, dayKey, sortDesc,
+  totalToday, totalLast24h, lastFeed, formatElapsed,
   groupByDay, dailySeries, comparePeriods, compareToday,
   findPatterns, hourHistogram, nextFeedEstimate,
 } from "./lib/stats.js";
@@ -27,6 +27,7 @@ const state = {
   offlineData: false,   // l'écran montre la dernière synchro, pas encore rafraîchie
   syncedAt: null,
   pending: queue.size(),
+  listOpen: true,       // accueil : derniers boires dépliés
   range: "day",         // day | week | 2weeks
   metric: "total",      // total | count | interval
   sheet: null,
@@ -74,6 +75,8 @@ const ICONS = {
   chart: '<path d="M4 20h16M7 20v-7M12 20V6M17 20V10"/>',
   settings: '<path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/>',
   down: '<path d="M6 9l6 6 6-6"/>',
+  up2: '<path d="M6 15l6-6 6 6"/>',
+  right: '<path d="M9 6l6 6-6 6"/>',
   check: '<path d="M5 12l5 5 9-10"/>',
   x: '<path d="M6 6l12 12M18 6L6 18"/>',
   backspace: '<path d="M9 6h10a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H9l-6-6z"/><path d="M13 10l4 4M17 10l-4 4"/>',
@@ -132,15 +135,16 @@ function renderApp() {
       <header class="header">
         <button class="baby-btn" data-action="open-babies" aria-label="Changer de bébé">
           <span class="baby-icon">${icon("baby")}</span>
-          <span class="baby-name">${esc(baby.name)}</span>
-          ${many ? `<span class="baby-chev">${icon("down")}</span>` : ""}
+          <span class="baby-id">
+            <span class="baby-line"><span class="baby-name">${esc(baby.name)}</span>${many ? `<span class="baby-chev">${icon("down")}</span>` : ""}</span>
+            <span class="meta" id="today-label"></span>
+          </span>
         </button>
-        ${window.KENDA_DEV ? `<span class="dev-tag">DEV</span>` : ""}
+        <div class="totals" id="totals"></div>
       </header>
       <div id="net-banner" class="net-banner" hidden></div>
       <main id="main"></main>
     </div>
-    <button class="fab" data-action="add-feed" aria-label="Ajouter un boire">${icon("plus")}<span>Ajouter un boire</span></button>
     <nav class="nav">
       ${navBtn("home", "home", "Accueil")}
       ${navBtn("history", "chart", "Historique")}
@@ -152,79 +156,85 @@ function renderApp() {
 const navBtn = (tab, ic, label) =>
   `<button class="${state.tab === tab ? "on" : ""}" data-action="tab" data-tab="${tab}">${icon(ic)}<span>${label}</span></button>`;
 
+/** Les deux totaux, discrets, en haut à droite : visibles sur tous les onglets. */
+function renderTotals() {
+  const el = document.getElementById("totals");
+  if (!el) return;
+  const now = new Date(), feeds = babyFeeds(), u = unit();
+  el.innerHTML = `
+    <span class="total"><span class="total-label">Aujourd'hui</span><b>${formatAmount(totalToday(feeds, now), u)}</b><small>${u}</small></span>
+    <span class="total"><span class="total-label">Dernières 24 h</span><b>${formatAmount(totalLast24h(feeds, now), u)}</b><small>${u}</small></span>`;
+  const label = document.getElementById("today-label");
+  if (label) label.textContent = fr(now, { weekday: "short", day: "numeric", month: "short" });
+}
+
 /** Ne redessine que le contenu : appelé à chaque changement de données et à
  *  chaque tic d'horloge (les compteurs glissants vieillissent tout seuls). */
 function renderMain() {
   const main = document.getElementById("main");
   if (state.view !== "app" || !main) return;
+  renderTotals();
   // Ne pas écraser un champ des paramètres pendant qu'on y écrit.
   if (state.tab === "settings" && main.contains(document.activeElement) && document.activeElement.tagName === "INPUT") return;
   main.innerHTML = state.tab === "history" ? viewHistory() : state.tab === "settings" ? viewSettings() : viewHome();
-  const fab = $(".fab");
-  if (fab) fab.classList.toggle("hidden", state.tab === "settings");
 }
 
 // ------------------------------------------------------------------ accueil ---
-function feedRow(f) {
+/** Une ligne de boire : heure + type, puis une barre proportionnelle à la quantité. */
+function feedRow(f, max) {
   const who = caregiver(f.caregiver_id);
-  const meta = [enabledKinds().length > 1 || f.kind !== enabledKinds()[0] ? KIND_SHORT[f.kind] : "", who ? `par ${who.name}` : ""].filter(Boolean).join(" · ");
+  const showKind = enabledKinds().length > 1 || f.kind !== enabledKinds()[0];
   const unsent = queue.all().some((q) => q.id === f.id);
+  const width = Math.max(8, Math.round((Number(f.amount_ml) / (max || Number(f.amount_ml))) * 100));
   return `
     <button class="feed-row" data-action="edit-feed" data-id="${f.id}">
-      <span class="kind-dot ${f.kind}">${icon("bottle")}</span>
       <span class="feed-main">
-        <span class="feed-time">${fmtTime(f.started_at)}</span>
-        <span class="meta">${esc(meta)}${unsent ? ` <span class="unsent" title="Pas encore envoyé">${icon("cloudUp")}</span>` : ""}</span>
+        <span class="feed-time">${fmtTime(f.started_at)}${showKind ? ` <span class="feed-kind">${KIND_SHORT[f.kind]}</span>` : ""}${who ? ` <span class="meta">· ${esc(who.name)}</span>` : ""}${unsent ? ` <span class="unsent" title="Pas encore envoyé">${icon("cloudUp")}</span>` : ""}</span>
+        <span class="feed-bar-line"><span class="feed-bar-zone"><span class="feed-bar ${f.kind}" style="width:${width}%"></span></span>
+          <span class="feed-amount">${formatAmount(f.amount_ml, unit())}<small> ${unit()}</small></span></span>
       </span>
-      <span class="feed-amount">${formatAmount(f.amount_ml, unit())}<small> ${unit()}</small></span>
+      <span class="chev">${icon("right")}</span>
     </button>`;
 }
+const maxAmount = (list) => Math.max(1, ...list.map((f) => Number(f.amount_ml)));
 
 function viewHome() {
   const now = new Date(), feeds = babyFeeds(), baby = currentBaby();
   const last = lastFeed(feeds, now);
-  const today = totalToday(feeds, now), last24 = totalLast24h(feeds, now);
-  const nToday = countBetween(feeds, startOfDay(now), new Date(now.getTime() + 1));
-  const n24 = countBetween(feeds, new Date(now.getTime() - DAY + 1), new Date(now.getTime() + 1));
 
-  let lastCard;
+  let hero;
   if (!last) {
-    lastCard = `<section class="last-card"><p class="last-label">Aucun boire noté pour l'instant</p>
-      <p class="meta">Touche « Ajouter un boire » pour commencer le suivi de ${esc(baby.name)}.</p></section>`;
+    hero = `<div class="hero"><span class="hero-icon">${icon("bottle")}</span>
+      <div class="hero-text"><p class="hero-title">Aucun boire noté</p>
+      <p class="meta">Touche le « + » pour commencer le suivi de ${esc(baby.name)}.</p></div></div>`;
   } else {
     const elapsed = now - new Date(last.started_at);
     const late = baby.remind_after_min && elapsed >= baby.remind_after_min * 60000;
     const who = caregiver(last.caregiver_id);
     const next = nextFeedEstimate(feeds, now);
-    const bits = [`à ${fmtTime(last.started_at)}`, amount(last.amount_ml), enabledKinds().length > 1 ? KIND_SHORT[last.kind].toLowerCase() : "", who ? `par ${who.name}` : ""].filter(Boolean);
-    lastCard = `<section class="last-card ${late ? "late" : ""}">
-      <p class="last-label">${icon("clock")} Dernier boire</p>
-      <p class="last-elapsed">${elapsed < 60000 ? "à l'instant" : "il y a " + formatElapsed(elapsed)}</p>
-      <p class="meta">${esc(bits.join(" · "))}</p>
-      ${next && next > now ? `<p class="meta next">Prochain probable vers ${fmtTime(next)}</p>` : ""}
-    </section>`;
+    hero = `<div class="hero">
+      <span class="hero-icon">${icon("bottle")}</span>
+      <div class="hero-text">
+        <p class="hero-title">Dernier boire</p>
+        <p class="hero-elapsed ${late ? "late" : ""}">${elapsed < 60000 ? "à l'instant" : "il y a " + formatElapsed(elapsed)}</p>
+        <p class="meta">${esc([`à ${fmtTime(last.started_at)}`, who ? `par ${who.name}` : ""].filter(Boolean).join(" · "))}</p>
+        ${next && next > now ? `<p class="meta">Prochain vers ${fmtTime(next)}</p>` : ""}
+      </div>
+      <p class="hero-amount">${formatAmount(last.amount_ml, unit())}<small>${unit()}</small></p>
+    </div>`;
   }
 
-  const recent = sortDesc(feeds).slice(0, 5);
+  const recent = sortDesc(feeds).slice(0, 5), max = maxAmount(recent);
+  const open = state.listOpen;
   return `
-    ${lastCard}
-    <section class="counters">
-      <div class="counter">
-        <p class="counter-label">Aujourd'hui</p>
-        <p class="counter-num">${formatAmount(today, unit())}<small>${unit()}</small></p>
-        <p class="meta">${plural(nToday, "boire")} depuis minuit</p>
-      </div>
-      <div class="counter">
-        <p class="counter-label">Dernières 24 h</p>
-        <p class="counter-num">${formatAmount(last24, unit())}<small>${unit()}</small></p>
-        <p class="meta">${plural(n24, "boire")}</p>
-      </div>
-    </section>
-    <section>
-      <div class="section-head"><h2>Derniers boires</h2>
-        ${feeds.length > 5 ? `<button class="link" data-action="tab" data-tab="history">Tout voir</button>` : ""}</div>
-      ${recent.length ? `<div class="card list">${recent.map(feedRow).join("")}</div>`
-        : `<div class="empty">Rien encore. Le premier boire apparaîtra ici.</div>`}
+    <section class="feed-card">
+      <div class="feed-band"><h2>Boires</h2>
+        <button class="add-btn" data-action="add-feed" aria-label="Ajouter un boire">${icon("plus")}</button></div>
+      ${hero}
+      ${recent.length ? `
+        <button class="fold" data-action="toggle-list"><span>${open ? "Afficher moins" : "Afficher les derniers boires"}</span>${icon(open ? "up2" : "down")}</button>
+        ${open ? recent.map((f) => feedRow(f, max)).join("") : ""}
+        ${open && feeds.length > 5 ? `<button class="fold more" data-action="tab" data-tab="history"><span>Tout l'historique</span>${icon("right")}</button>` : ""}` : ""}
     </section>`;
 }
 
@@ -330,7 +340,7 @@ function viewHistory() {
       <div class="day-group">
         <div class="day-head"><h3>${esc(capitalize(dayLabel(g.date, now)))}</h3>
           <span class="day-total">${amount(g.total)} <small>· ${plural(g.count, "boire")}</small></span></div>
-        <div class="card list">${g.feeds.map(feedRow).join("")}</div>
+        <div class="card list">${g.feeds.map((f) => feedRow(f, maxAmount(g.feeds))).join("")}</div>
       </div>`).join("")
     : `<div class="empty">Aucun boire ${days === 1 ? "aujourd'hui" : "sur cette période"}.</div>`;
   return `
@@ -513,29 +523,32 @@ function renderSheet() {
   const el = document.getElementById("sheet");
   if (!el || !state.sheet) return;
   const body = state.sheet.type === "feed" ? sheetFeed() : state.sheet.type === "babies" ? sheetBabies() : sheetNewBaby();
-  el.innerHTML = `<div class="grab"></div>${body}`;
+  const feed = state.sheet.type === "feed";
+  el.classList.toggle("form-sheet", feed);
+  el.innerHTML = feed ? body : `<div class="grab"></div>${body}`;
 }
 
 // ---------------------------------------------------------- ajout d'un boire ---
+// Feuille calquée sur une fiche iOS : bandeau (fermer · titre · enregistrer),
+// puis une ligne par champ. L'heure ouvre le sélecteur natif de l'iPhone, la
+// quantité son clavier numérique.
 function openFeedSheet(feed) {
-  const kinds = enabledKinds(), u = unit();
+  const kinds = enabledKinds();
   const last = sortDesc(babyFeeds())[0];
-  const base = feed || last;
   openSheet({
     type: "feed",
     id: feed?.id || null,
     kind: feed?.kind || (last && kinds.includes(last.kind) ? last.kind : kinds[0]),
-    // Pré-remplissage : la dernière quantité utilisée. La première touche la remplace.
-    input: base ? formatAmount(base.amount_ml, u) : "",
-    fresh: true,
     time: feed ? new Date(feed.started_at) : null,   // null = « maintenant », figé à l'enregistrement
     confirmDelete: false,
   });
+  // Nouveau boire : clavier numérique tout de suite (doit rester dans le geste du toucher pour iOS).
+  if (!feed) $("#feed-amount")?.focus({ preventScroll: true });
 }
 
 function timeLabel(d) {
-  if (!d) return "Maintenant";
-  return `${dayLabel(d)}, ${fmtTime(d)}`;
+  const x = d || new Date();
+  return `${dayLabel(x)} ${fmtTime(x)}`;
 }
 function toLocalInput(d) {
   const p = (n) => String(n).padStart(2, "0");
@@ -547,58 +560,57 @@ function sheetFeed() {
   const showKinds = kinds.length > 1 || !kinds.includes(s.kind);
   const kindList = showKinds ? [...new Set([...kinds, s.kind])] : [];
   const now = new Date();
+  const existing = s.id ? state.feeds.find((f) => f.id === s.id) : null;
+  const last = lastFeed(babyFeeds(), now);
 
   // Passation : si l'autre parent vient tout juste de noter un boire, on le dit.
   let warn = "";
-  if (!s.id) {
-    const recent = lastFeed(babyFeeds(), now);
-    if (recent && now - new Date(recent.started_at) < 20 * 60000) {
-      const who = caregiver(recent.caregiver_id);
-      warn = `<p class="sheet-warn">${icon("clock")} Un boire de ${amount(recent.amount_ml)} a déjà été noté à ${fmtTime(recent.started_at)}${who ? ` par ${esc(who.name)}` : ""}.</p>`;
-    }
+  if (!s.id && last && now - new Date(last.started_at) < 20 * 60000) {
+    const who = caregiver(last.caregiver_id);
+    warn = `<p class="sheet-warn">${icon("clock")} Un boire de ${amount(last.amount_ml)} a déjà été noté à ${fmtTime(last.started_at)}${who ? ` par ${esc(who.name)}` : ""}.</p>`;
   }
-  const keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", u === "oz" ? "," : "", "0", "back"];
   return `
-    <h2>${s.id ? "Modifier le boire" : "Nouveau boire"}</h2>
-    ${warn}
-    ${showKinds ? `<div class="pillrow kinds">${kindList.map((k) =>
-      `<button class="pill ${k} ${s.kind === k ? "on" : ""}" data-action="feed-kind" data-kind="${k}">${KINDS[k]}</button>`).join("")}</div>` : ""}
-    <div class="amount ${s.fresh && s.input ? "prefill" : ""}" id="feed-amount"><span id="feed-amount-num">${esc(s.input || "0")}</span><small>${u}</small></div>
-    <div class="keypad">${keys.map((k) => k === ""
-      ? `<span></span>`
-      : `<button data-action="key" data-key="${k}" ${k === "back" ? 'aria-label="Effacer"' : ""}>${k === "back" ? icon("backspace") : k}</button>`).join("")}</div>
-    <div class="time-row">
-      <label class="time-pill">${icon("clock")}<span id="feed-time-label">${esc(timeLabel(s.time))}</span>
-        <input type="datetime-local" id="feed-time" value="${toLocalInput(s.time || now)}" max="${toLocalInput(now)}" data-change="feed-time" aria-label="Heure de début du boire"></label>
-      <div class="pillrow tight">
-        ${[[0, "Maint."], [10, "−10 min"], [20, "−20 min"], [30, "−30 min"]].map(([m, l]) =>
-          `<button class="pill small" data-action="feed-ago" data-min="${m}">${l}</button>`).join("")}
-      </div>
+    <div class="sheet-band">
+      <button class="band-btn" data-action="close-sheet" aria-label="Fermer">${icon("x")}</button>
+      <h2>${s.id ? "Modifier le boire" : "Boire"}</h2>
+      <button class="band-save" data-action="save-feed">Enregistrer</button>
     </div>
-    <button class="btn save block" data-action="save-feed">Enregistrer</button>
-    ${s.id ? `<button class="btn ghost block danger" data-action="delete-feed">${icon("trash")} ${s.confirmDelete ? "Toucher encore pour supprimer" : "Supprimer ce boire"}</button>` : ""}`;
+    ${warn}
+    <label class="form-row">
+      <span class="row-label">Heure de début</span>
+      <span class="row-value" id="feed-time-label">${esc(timeLabel(s.time))}</span>
+      <input type="datetime-local" class="row-cover" id="feed-time" value="${toLocalInput(s.time || now)}" max="${toLocalInput(now)}" data-change="feed-time" aria-label="Heure de début du boire">
+    </label>
+    ${showKinds ? `<div class="form-row">
+      <span class="row-label">Type</span>
+      <span class="pillrow tight">${kindList.map((k) =>
+        `<button class="pill small ${k} ${s.kind === k ? "on" : ""}" data-action="feed-kind" data-kind="${k}">${KIND_SHORT[k]}</button>`).join("")}</span>
+    </div>` : ""}
+    <label class="form-row">
+      <span class="row-label">Quantité</span>
+      <span class="row-amount"><input type="text" id="feed-amount" inputmode="${u === "oz" ? "decimal" : "numeric"}" autocomplete="off" enterkeyhint="done"
+        placeholder="Ajouter" value="${existing ? formatAmount(existing.amount_ml, u) : ""}" data-input="feed-amount" aria-label="Quantité en ${u}"><small>${u}</small></span>
+    </label>
+    ${!s.id && last ? `<div class="suggest" id="feed-suggest">
+      <span>Utiliser la dernière quantité : ${amount(last.amount_ml)} ?</span>
+      <button class="btn-outline" data-action="use-last" data-value="${formatAmount(last.amount_ml, u)}">Oui</button>
+    </div>` : ""}
+    ${s.id ? `<div class="sheet-foot"><button class="btn ghost danger" data-action="delete-feed">${icon("trash")} ${s.confirmDelete ? "Toucher encore pour supprimer" : "Supprimer ce boire"}</button></div>` : ""}`;
 }
 
-function pressKey(key) {
-  const s = state.sheet, u = unit();
-  let v = s.fresh ? "" : s.input;
-  if (key === "back") v = s.fresh ? "" : v.slice(0, -1);
-  else if (key === ",") { if (!v.includes(",")) v = (v || "0") + ","; }
-  else {
-    if (v === "0") v = "";
-    const [int, dec] = v.split(",");
-    if (dec !== undefined) { if (dec.length < 1) v += key; }
-    else if (int.length < (u === "oz" ? 2 : 3)) v += key;
-  }
-  s.input = v; s.fresh = false;
-  $("#feed-amount-num").textContent = v || "0";
-  $("#feed-amount").classList.remove("prefill");
+/** Garde la saisie propre : chiffres seulement (une décimale en oz). */
+function cleanAmount(raw) {
+  let v = String(raw).replace(/\./g, ",").replace(/[^\d,]/g, "");
+  if (unit() !== "oz") return v.replace(/,/g, "").slice(0, 3);
+  const [int, ...rest] = v.split(",");
+  return rest.length ? `${int.slice(0, 2)},${rest.join("").slice(0, 1)}` : int.slice(0, 2);
 }
 
 function saveFeed() {
   const s = state.sheet, u = unit();
-  const value = parseFloat((s.input || "").replace(",", "."));
-  if (!value || value <= 0) { toast("Entre une quantité"); return; }
+  const field = $("#feed-amount");
+  const value = parseFloat((field?.value || "").replace(",", "."));
+  if (!value || value <= 0) { toast("Entre une quantité"); field?.focus(); return; }
   const ml = fromUnit(value, u);
   if (ml > 1000) { toast("Quantité trop grande"); return; }
   const when = s.time || new Date();
@@ -622,7 +634,11 @@ function saveFeed() {
 
 function deleteFeed() {
   const s = state.sheet;
-  if (!s.confirmDelete) { s.confirmDelete = true; renderSheet(); return; }
+  if (!s.confirmDelete) {
+    s.confirmDelete = true;
+    $('[data-action="delete-feed"]').innerHTML = `${icon("trash")} Toucher encore pour supprimer`;
+    return;
+  }
   const existing = state.feeds.find((f) => f.id === s.id);
   if (existing) commitFeed({ ...existing, deleted_at: new Date().toISOString() });
   closeSheet();
@@ -996,15 +1012,13 @@ document.addEventListener("click", async (e) => {
     // boires
     case "add-feed": return openFeedSheet(null);
     case "edit-feed": { const f = state.feeds.find((x) => x.id === btn.dataset.id); if (f) openFeedSheet(f); return; }
-    case "feed-kind": state.sheet.kind = btn.dataset.kind; return renderSheet();
-    case "key": return pressKey(btn.dataset.key);
-    case "feed-ago": {
-      const m = Number(btn.dataset.min);
-      state.sheet.time = m ? new Date(Date.now() - m * 60000) : null;
-      $("#feed-time-label").textContent = timeLabel(state.sheet.time);
-      $("#feed-time").value = toLocalInput(state.sheet.time || new Date());
+    case "feed-kind":
+      state.sheet.kind = btn.dataset.kind;      // sans redessiner : la quantité en cours de saisie reste
+      document.querySelectorAll('#sheet [data-action="feed-kind"]').forEach((b) => b.classList.toggle("on", b.dataset.kind === state.sheet.kind));
       return;
-    }
+    case "use-last": $("#feed-amount").value = btn.dataset.value; $("#feed-suggest")?.remove(); return;
+    case "close-sheet": return closeSheet();
+    case "toggle-list": state.listOpen = !state.listOpen; return renderMain();
     case "save-feed": return saveFeed();
     case "delete-feed": return deleteFeed();
 
@@ -1059,13 +1073,23 @@ document.addEventListener("change", (e) => {
   }
 });
 
+document.addEventListener("input", (e) => {
+  if (e.target?.dataset?.input !== "feed-amount") return;
+  const v = cleanAmount(e.target.value);
+  if (v !== e.target.value) e.target.value = v;
+  if (v) $("#feed-suggest")?.remove();
+});
+
 document.addEventListener("submit", (e) => {
   e.preventDefault();
   if (e.target.id === "auth-form") submitAuth();
   if (e.target.id === "reset-form") submitReset();
 });
 
-document.addEventListener("keydown", (e) => { if (e.key === "Escape" && state.sheet) closeSheet(); });
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && state.sheet) closeSheet();
+  if (e.key === "Enter" && e.target?.id === "feed-amount") saveFeed();
+});
 
 // =============================================================== DÉMARRAGE ===
 // Lien du courriel « Mot de passe oublié ? » : Supabase ramène ici avec

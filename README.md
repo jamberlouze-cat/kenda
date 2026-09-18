@@ -98,8 +98,9 @@ Ouvre l'adresse dans **Safari** → **Partager** → **Sur l'écran d'accueil**.
 - **Aujourd'hui** = depuis minuit (heure de l'appareil). **Dernières 24 h** =
   fenêtre glissante. Les deux sont recalculés à chaque affichage, toutes les
   20 secondes, et à chaque retour dans l'app.
-- **Pré-remplissage** : la dernière quantité utilisée (en gris) ; la première
-  touche du clavier la remplace.
+- **Saisie** : le « + » de la carte « Boires » ouvre une fiche ; l'heure passe par
+  le sélecteur natif de l'iPhone, la quantité par son clavier numérique (ouvert
+  d'office). « Utiliser la dernière quantité ? Oui » la remplit d'une touche.
 - **Hors ligne** : on peut ajouter, corriger et supprimer des boires. Ils sont
   gardés sur l'appareil (file d'attente) et envoyés dès que le réseau revient ;
   un petit nuage marque ceux qui attendent. Le compte, les bébés et les réglages
