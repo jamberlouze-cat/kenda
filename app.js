@@ -323,7 +323,8 @@ function patternCard() {
 }
 
 /** Calendrier de la dernière semaine : une colonne par jour, l'axe des heures
- *  de haut en bas, un trait par boire. Les habitudes (et les nuits) sautent aux yeux. */
+ *  de haut en bas, un trait par boire. Les habitudes (et les nuits) sautent aux yeux.
+ *  Lecture seule, à la demande de Maxime : un toucher accidentel ne doit rien ouvrir. */
 function weekCalendarCard() {
   const now = new Date(), feeds = babyFeeds();
   const days = Array.from({ length: 7 }, (_, i) => addDays(startOfDay(now), i - 6));
@@ -334,13 +335,12 @@ function weekCalendarCard() {
   const cols = days.map((d, i) => {
     const key = dayKey(d);
     const marks = feeds.filter((f) => dayKey(f.started_at) === key).map((f) =>
-      `<button class="cal-mark ${f.kind}" style="top:${pct(minuteOf(f.started_at))}" data-action="edit-feed" data-id="${f.id}"
-        aria-label="${esc(`${fmtTime(f.started_at)}, ${amount(f.amount_ml)}`)}"></button>`).join("");
+      `<span class="cal-mark ${f.kind}" style="top:${pct(minuteOf(f.started_at))}" title="${esc(`${fmtTime(f.started_at)}, ${amount(f.amount_ml)}`)}"></span>`).join("");
     return `<div class="cal-col ${i === 6 ? "today" : ""}">${marks}${i === 6 ? `<span class="cal-now" style="top:${pct(minuteOf(now))}"></span>` : ""}</div>`;
   }).join("");
   const hours = [0, 3, 6, 9, 12, 15, 18, 21, 24];
   return `<section class="card cal-card">
-      <div class="section-head"><h2>La semaine</h2><span class="meta">touche un trait pour le modifier</span></div>
+      <div class="section-head"><h2>La semaine</h2><span class="meta">un trait par boire</span></div>
       <div class="cal-head"><span></span>${head}</div>
       <div class="cal-body">
         <div class="cal-axis">${hours.map((h) => `<span style="top:${pct(h * 60)}">${h} h</span>`).join("")}</div>

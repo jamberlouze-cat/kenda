@@ -260,7 +260,6 @@ select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.o
 .cal-col + .cal-col { border-left: 1px solid color-mix(in srgb, var(--cream-line) 55%, transparent); }
 .cal-col.today { background: color-mix(in srgb, var(--lilac-soft) 45%, transparent); }
 .cal-mark { position: absolute; left: 4px; right: 4px; height: 8px; margin-top: -4px; border-radius: 3px; padding: 0; }
-.cal-mark::after { content: ""; position: absolute; inset: -7px -2px; }   /* zone de toucher plus généreuse */
 .cal-mark.maternel, .cal-legend i.maternel { background: var(--lilac-mid); }
 .cal-mark.formule, .cal-legend i.formule { background: var(--blue-mid); }
 .cal-now { position: absolute; left: 0; right: 0; border-top: 1.5px solid var(--lilac-dark); }
