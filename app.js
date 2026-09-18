@@ -579,7 +579,7 @@ function sheetFeed() {
   return `
     <div class="sheet-band">
       <button class="band-btn" data-action="close-sheet" aria-label="Fermer">${icon("x")}</button>
-      <h2>${s.id ? "Modifier le boire" : "Boire"}</h2>
+      <h2>${s.id ? "Modifier le boire" : "Ajouter un boire"}</h2>
       <button class="band-save" data-action="save-feed">Enregistrer</button>
     </div>
     ${warn}
