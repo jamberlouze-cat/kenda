@@ -5,7 +5,7 @@ import {
   fromUnit, formatAmount, startOfDay, addDays, dayKey, sortDesc,
   totalToday, totalLast24h, lastFeed, formatElapsed,
   groupByDay, dailySeries, comparePeriods, compareToday,
-  findPatterns, hourHistogram, nextFeedEstimate,
+  findPatterns, hourHistogram,
 } from "./lib/stats.js";
 
 const VERSION = "1.0.0";
@@ -110,6 +110,8 @@ function enabledKinds() {
   const k = (currentBaby()?.kinds || []).filter((x) => KINDS[x]);
   return k.length ? k : ["maternel", "formule"];
 }
+/** Photo du bébé si elle existe, sinon l'icône. (La photo est une petite image « data: » gardée avec le bébé.) */
+const babyFace = (b) => (b?.photo && /^data:image\//.test(b.photo) ? `<img src="${esc(b.photo)}" alt="">` : icon("baby"));
 const plural = (n, word) => `${n} ${word}${n > 1 ? "s" : ""}`;
 
 // ================================================================== RENDU ===
@@ -134,7 +136,7 @@ function renderApp() {
     <div class="screen">
       <header class="header">
         <button class="baby-btn" data-action="open-babies" aria-label="Changer de bébé">
-          <span class="baby-icon">${icon("baby")}</span>
+          <span class="baby-icon">${babyFace(baby)}</span>
           <span class="baby-id">
             <span class="baby-line"><span class="baby-name">${esc(baby.name)}</span>${many ? `<span class="baby-chev">${icon("down")}</span>` : ""}</span>
             <span class="meta" id="today-label"></span>
@@ -211,14 +213,12 @@ function viewHome() {
     const elapsed = now - new Date(last.started_at);
     const late = baby.remind_after_min && elapsed >= baby.remind_after_min * 60000;
     const who = caregiver(last.caregiver_id);
-    const next = nextFeedEstimate(feeds, now);
     hero = `<div class="hero">
       <span class="hero-icon">${icon("bottle")}</span>
       <div class="hero-text">
         <p class="hero-title">Dernier boire</p>
         <p class="hero-elapsed ${late ? "late" : ""}">${elapsed < 60000 ? "à l'instant" : "il y a " + formatElapsed(elapsed)}</p>
         <p class="meta">${esc([`à ${fmtTime(last.started_at)}`, who ? `par ${who.name}` : ""].filter(Boolean).join(" · "))}</p>
-        ${next && next > now ? `<p class="meta">Prochain vers ${fmtTime(next)}</p>` : ""}
       </div>
       <p class="hero-amount">${formatAmount(last.amount_ml, unit())}<small>${unit()}</small></p>
     </div>`;
@@ -361,6 +361,13 @@ function viewSettings() {
   return `
     <section class="card form-card">
       <h2>${esc(baby.name)}</h2>
+      <div class="photo-row">
+        <span class="photo-preview">${babyFace(baby)}</span>
+        <div class="photo-actions">
+          <label class="btn small">${baby.photo ? "Changer la photo" : "Ajouter une photo"}<input type="file" accept="image/*" data-change="baby-photo" aria-label="Choisir une photo de ${esc(baby.name)}"></label>
+          ${baby.photo ? `<button class="link" data-action="remove-photo">Retirer la photo</button>` : ""}
+        </div>
+      </div>
       <div class="field"><label for="set-baby-name">Prénom du bébé</label>
         <div class="row"><input type="text" id="set-baby-name" value="${esc(baby.name)}" autocomplete="off" maxlength="40">
         <button class="btn small" data-action="save-baby-name">Enregistrer</button></div></div>
@@ -402,7 +409,7 @@ function viewSettings() {
       <h2>Mes bébés</h2>
       <div class="list flat">${state.babies.map((b) => `
         <button class="feed-row" data-action="pick-baby" data-id="${b.id}">
-          <span class="kind-dot maternel">${icon("baby")}</span>
+          <span class="kind-dot maternel">${babyFace(b)}</span>
           <span class="feed-main"><span class="feed-time">${esc(b.name)}</span></span>
           ${b.id === state.babyId ? `<span class="meta">affiché</span>` : ""}
         </button>`).join("")}</div>
@@ -666,7 +673,7 @@ function sheetBabies() {
   return `<h2>Mes bébés</h2>
     <div class="list flat">${state.babies.map((b) => `
       <button class="feed-row ${b.id === state.babyId ? "cur" : ""}" data-action="pick-baby" data-id="${b.id}">
-        <span class="kind-dot maternel">${icon("baby")}</span>
+        <span class="kind-dot maternel">${babyFace(b)}</span>
         <span class="feed-main"><span class="feed-time">${esc(b.name)}</span></span>
         ${b.id === state.babyId ? icon("check") : ""}
       </button>`).join("")}</div>
@@ -775,7 +782,7 @@ function loadAll(preferBabyId = null) {
  *  sauf si une feuille est ouverte (elle n'en dépend pas). */
 function refreshHeader() {
   const name = $(".baby-name");
-  if (!name || name.textContent !== currentBaby()?.name || !!$(".baby-chev") !== state.babies.length > 1) renderApp();
+  if (!name || name.textContent !== currentBaby()?.name || ($(".baby-icon img")?.getAttribute("src") || null) !== (currentBaby()?.photo || null) || !!$(".baby-chev") !== state.babies.length > 1) renderApp();
 }
 
 // ------------------------------------------------------------- temps réel ---
@@ -953,6 +960,23 @@ async function createOrJoinBaby(join) {
   toast(join ? "Suivi rejoint" : "Suivi créé", { kind: "ok" });
 }
 
+/** Photo du bébé : recadrée en carré et réduite à 256 px sur l'appareil (≈ 15 Ko),
+ *  puis gardée avec le bébé — elle suit donc la synchro et le mode hors ligne. */
+function shrinkPhoto(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file), img = new Image();
+    img.onload = () => {
+      const side = Math.min(img.naturalWidth, img.naturalHeight), size = 256;
+      const c = document.createElement("canvas"); c.width = c.height = size;
+      c.getContext("2d").drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, size, size);
+      URL.revokeObjectURL(url);
+      resolve(c.toDataURL("image/jpeg", 0.82));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("image illisible")); };
+    img.src = url;
+  });
+}
+
 /** Réglages du bébé : appliqués à l'écran tout de suite, annulés si Supabase refuse. */
 async function updateBaby(patch, okMsg) {
   const baby = currentBaby(), before = { ...baby };
@@ -989,7 +1013,7 @@ function resetToSignedOut() {
 
 // Hors ligne on peut tout faire sur les boires ; ce qui touche au compte, aux
 // bébés et aux réglages partagés attend le réseau.
-const ONLINE_ONLY = new Set(["create-baby", "join-baby", "save-baby-name", "set-unit", "toggle-kind", "save-my-name", "forgot"]);
+const ONLINE_ONLY = new Set(["remove-photo", "create-baby", "join-baby", "save-baby-name", "set-unit", "toggle-kind", "save-my-name", "forgot"]);
 const isOffline = () => !navigator.onLine || !state.online;
 
 document.addEventListener("click", async (e) => {
@@ -1045,6 +1069,7 @@ document.addEventListener("click", async (e) => {
       if (!next.length) { toast("Garde au moins un type actif"); return; }
       return updateBaby({ kinds: next });
     }
+    case "remove-photo": return updateBaby({ photo: null }, "Photo retirée");
     case "save-my-name": return saveMyName();
     case "copy-code":
       navigator.clipboard?.writeText(currentBaby().join_code);
@@ -1066,6 +1091,13 @@ document.addEventListener("change", (e) => {
     if (isNaN(d)) return;
     state.sheet.time = d;
     $("#feed-time-label").textContent = timeLabel(d);
+  }
+  if (kind === "baby-photo") {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (isOffline()) { toast("Hors ligne — possible dès que le réseau revient", { ms: 3200 }); return; }
+    shrinkPhoto(file).then((photo) => updateBaby({ photo }, "Photo mise à jour"))
+      .catch(() => toast("Cette image n'a pas pu être lue"));
   }
   if (kind === "set-remind") {
     if (isOffline()) { toast("Hors ligne — possible dès que le réseau revient", { ms: 3200 }); renderMain(); return; }

@@ -16,8 +16,12 @@ create table if not exists public.babies (
   unit             text not null default 'ml' check (unit in ('ml','oz')),
   kinds            text[] not null default '{maternel,formule}',
   remind_after_min int check (remind_after_min is null or remind_after_min between 30 and 720),
+  photo            text check (photo is null or length(photo) < 200000),   -- petite image « data: » (256 px), réduite par l'app
   created_at       timestamptz not null default now()
 );
+
+-- (Si la table existait déjà avant l'ajout de la photo.)
+alter table public.babies add column if not exists photo text check (photo is null or length(photo) < 200000);
 
 -- Les personnes qui suivent un bébé (toi, ta conjointe, une gardienne…).
 create table if not exists public.caregivers (
