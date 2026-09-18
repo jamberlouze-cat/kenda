@@ -1105,7 +1105,23 @@ document.addEventListener("change", (e) => {
   }
 });
 
+// Heure de début : le champ natif est invisible, posé par-dessus la ligne.
+// Sur iPhone, le toucher ouvre la roulette tout seul ; sur ordinateur, un champ
+// invisible ne montre rien : on demande donc au navigateur d'ouvrir son sélecteur.
+document.addEventListener("click", (e) => {
+  const field = e.target.closest?.(".form-row")?.querySelector("#feed-time");
+  if (!field) return;
+  try { field.showPicker?.(); } catch { field.focus(); }
+});
+
 document.addEventListener("input", (e) => {
+  // Certains navigateurs n'envoient « change » qu'à la fermeture du sélecteur : on suit aussi « input ».
+  if (e.target?.id === "feed-time" && state.sheet?.type === "feed") {
+    const d = new Date(e.target.value);
+    if (!isNaN(d)) { state.sheet.time = d; $("#feed-time-label").textContent = timeLabel(d); }
+    return;
+  }
+
   if (e.target?.dataset?.input !== "feed-amount") return;
   const v = cleanAmount(e.target.value);
   if (v !== e.target.value) e.target.value = v;
