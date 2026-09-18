@@ -278,9 +278,17 @@ html.sheet-open, html.sheet-open body { overflow: hidden; }
 .form-row { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 68px; padding: 10px 20px; border-bottom: 1px solid var(--cream-line); }
 .row-label { font-family: var(--font-display); font-weight: 300; font-size: 19px; color: var(--lilac-dark); white-space: nowrap; }
 .row-value { font-size: 17px; color: var(--blue-dark); text-align: right; }
-.form-row { flex-wrap: wrap; }
-.when { display: flex; align-items: center; gap: 6px; margin-left: auto; }
-.when-part { position: relative; display: inline-flex; align-items: center; min-height: 40px; padding: 0 11px; border-radius: 999px; background: var(--blue-soft); color: var(--blue-dark); font-size: 15px; font-weight: 600; white-space: nowrap; }
+button.form-row { width: 100%; text-align: left; }
+.form-row.open .row-value { background: var(--blue-soft); border-radius: 999px; padding: 6px 12px; margin-right: -12px; }
+/* Roulette jour · heure · minute (38 px par cran, 5 crans visibles ; même valeur que WHEEL_ITEM). */
+.wheel { position: relative; display: grid; grid-template-columns: 1.7fr .8fr .8fr; height: 190px; padding: 0 20px; border-bottom: 1px solid var(--cream-line); background: var(--cream);
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 38%, #000 62%, transparent); mask-image: linear-gradient(to bottom, transparent, #000 38%, #000 62%, transparent); }
+.wheel[hidden] { display: none; }
+.wheel-band { position: absolute; left: 14px; right: 14px; top: 76px; height: 38px; border-radius: 10px; background: var(--cream-dark); pointer-events: none; }
+.wheel-col { position: relative; height: 190px; overflow-y: scroll; scroll-snap-type: y mandatory; padding: 76px 0; scrollbar-width: none; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+.wheel-col::-webkit-scrollbar { display: none; }
+.wheel-item { height: 38px; line-height: 38px; scroll-snap-align: center; text-align: center; font: 500 21px/38px var(--font-num); color: var(--text); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.wheel-col[data-wheel="jour"] .wheel-item { text-align: right; padding-right: 14px; }
 .row-cover { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; border: 0; padding: 0; }
 .row-amount { display: flex; align-items: baseline; gap: 6px; }
 .row-amount input { width: 110px; border: 0; background: transparent; padding: 6px 0; text-align: right; font: 800 26px var(--font-num); color: var(--text); border-radius: 0; }
