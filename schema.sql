@@ -169,6 +169,24 @@ begin
 end;
 $$;
 
+-- ---------- Total « depuis le début » ---------------------------------------
+-- L'app ne charge que les 31 derniers jours ; la base additionne le reste.
+-- SECURITY INVOKER : les règles RLS s'appliquent, on ne compte que ses bébés.
+
+create or replace function public.baby_totals(p_before timestamptz)
+returns table (baby_id uuid, total_ml numeric, feeds bigint, first_at timestamptz)
+language sql
+stable
+security invoker
+set search_path = public
+as $$
+  select f.baby_id, sum(f.amount_ml), count(*), min(f.started_at)
+  from public.feeds f
+  where f.deleted_at is null and f.started_at < p_before
+  group by f.baby_id
+$$;
+
+grant execute on function public.baby_totals(timestamptz) to authenticated;
 grant execute on function public.user_baby_ids()                to authenticated;
 grant execute on function public.create_baby(text, text, text)  to authenticated;
 grant execute on function public.join_baby(text, text, text)    to authenticated;

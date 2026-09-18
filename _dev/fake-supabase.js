@@ -39,13 +39,13 @@
       const max = { id: uuid(), baby_id: b.id, user_id: u.id, name: "Maxime", color: "#6B5A85", created_at: iso(now - 20 * DAY) };
       const jul = { id: uuid(), baby_id: b.id, user_id: u2.id, name: "Julie", color: "#3E6B7A", created_at: iso(now - 19 * DAY) };
       d.caregivers.push(max, jul);
-      for (let day = 16; day >= 0; day--) {
+      for (let day = 60; day >= 0; day--) {
         const midnight = new Date(now - day * DAY); midnight.setHours(0, 0, 0, 0);
         hours.forEach((h, i) => {
           if (rnd() < 0.06) return;                                  // un boire sauté de temps en temps
           const at = midnight.getTime() + (h * 60 + Math.round((rnd() - 0.5) * 70)) * 60000;
           if (at > now - 80 * 60000) return;
-          const amount = Math.round((base + (rnd() - 0.5) * 50 + (16 - day) * 1.5) / 5) * 5;
+          const amount = Math.round((base + (rnd() - 0.5) * 50 + Math.max(-45, (16 - day) * 1.5)) / 5) * 5;
           d.feeds.push({
             id: uuid(), baby_id: b.id, kind: kinds[i % kinds.length], amount_ml: amount,
             started_at: iso(at), caregiver_id: (h < 7 || rnd() > 0.55 ? jul : max).id,
@@ -158,6 +158,15 @@
   };
 
   const rpcs = {
+    baby_totals({ p_before }) {
+      const mine = myBabyIds(), out = {};
+      for (const f of db.feeds) {
+        if (f.deleted_at || !mine.includes(f.baby_id) || Date.parse(f.started_at) >= Date.parse(p_before)) continue;
+        const t = (out[f.baby_id] ||= { baby_id: f.baby_id, total_ml: 0, feeds: 0, first_at: f.started_at });
+        t.total_ml += Number(f.amount_ml); t.feeds++; if (f.started_at < t.first_at) t.first_at = f.started_at;
+      }
+      return Object.values(out);
+    },
     create_baby({ p_baby_name, p_caregiver_name, p_color }) {
       const uid = session()?.user.id; if (!uid) throw new Error("not authenticated");
       const b = { id: uuid(), name: p_baby_name, join_code: Math.random().toString(36).slice(2, 7).toUpperCase(), unit: "ml", kinds: ["maternel", "formule"], remind_after_min: null, created_at: new Date().toISOString() };

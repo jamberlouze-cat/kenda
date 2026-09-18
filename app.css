@@ -267,6 +267,12 @@ select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.o
 .cal-legend { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 10px; }
 .cal-legend i { width: 14px; height: 7px; border-radius: 3px; display: inline-block; margin-left: 8px; }
 
+.lifetime { display: flex; align-items: center; gap: 14px; margin-top: 26px; padding: 18px; border-radius: var(--radius); background: var(--lilac-soft); }
+.lifetime-icon { width: 48px; height: 48px; border-radius: 50%; background: var(--cream); color: var(--lilac-dark); display: grid; place-items: center; flex: none; }
+.lifetime-icon .ic { width: 28px; height: 28px; stroke-width: 1.4; transform: rotate(-24deg); }
+.lifetime-label { font-family: var(--font-display); font-weight: 300; font-size: 18px; color: var(--lilac-dark); }
+.lifetime-num { font: 800 26px/1.2 var(--font-num); letter-spacing: -0.02em; color: var(--mauve-deep); }
+
 .day-head { display: flex; align-items: baseline; justify-content: space-between; margin: 18px 4px 8px; }
 .day-head h3 { font-size: 17px; font-weight: 300; }
 .day-total { font: 700 16px var(--font-num); }

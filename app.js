@@ -21,6 +21,7 @@ const state = {
   view: "loading",      // loading | config | auth | newPassword | onboard | error | app
   tab: "home",          // home | history | settings
   user: null,
+  older: {},            // par bébé : total des boires plus vieux que la fenêtre chargée
   babies: [], caregivers: [], feeds: [],   // feeds : tous mes bébés, file d'attente appliquée
   babyId: null,
   online: navigator.onLine,
@@ -355,6 +356,17 @@ function weekCalendarCard() {
     </section>`;
 }
 
+function lifetimeCard() {
+  const t = lifetime(), baby = currentBaby();
+  if (!t.count) return "";
+  return `<section class="lifetime">
+      <span class="lifetime-icon">${icon("bottle")}</span>
+      <div><p class="lifetime-label">Tout ce que ${esc(baby.name)} a bu</p>
+        <p class="lifetime-num">${lifetimeLabel(t.ml)}</p>
+        <p class="meta">${plural(t.count, "boire")}${t.first ? ` depuis le ${fr(new Date(t.first), { day: "numeric", month: "long", year: "numeric" })}` : ""}</p></div>
+    </section>`;
+}
+
 function viewHistory() {
   const now = new Date();
   const days = state.range === "week" ? 7 : 14;
@@ -375,7 +387,8 @@ function viewHistory() {
     ${chartCard()}
     ${patternCard()}
     <div class="section-head"><h2>Journal</h2></div>
-    ${list}`;
+    ${list}
+    ${lifetimeCard()}`;
 }
 
 // --------------------------------------------------------------- paramètres ---
@@ -783,7 +796,7 @@ function saveSnapshot() {
   if (!state.user || !state.babies.length) return;
   snapshot.save({
     userId: state.user.id, email: state.user.email, babies: state.babies, caregivers: state.caregivers,
-    feeds: state.feeds, syncedAt: state.syncedAt,
+    feeds: state.feeds, older: state.older, syncedAt: state.syncedAt,
   });
 }
 
@@ -793,6 +806,7 @@ function showSnapshot() {
   if (!snap || !state.user || snap.userId !== state.user.id || !snap.babies?.length) return false;
   state.babies = snap.babies; state.caregivers = snap.caregivers || [];
   state.feeds = applyQueue(snap.feeds || []);
+  state.older = snap.older || {};
   state.syncedAt = snap.syncedAt || null;
   if (!state.user.email && snap.email) state.user = { ...state.user, email: snap.email };
   chooseBaby();
@@ -807,8 +821,7 @@ function chooseBaby(prefer) {
   if (state.babyId) babyMemory.set(state.babyId);
 }
 
-async function fetchFeeds() {
-  const since = new Date(Date.now() - HISTORY_DAYS * DAY).toISOString();
+async function fetchFeeds(since) {
   const all = [];
   for (let page = 0; page < 6; page++) {       // Supabase rend 1000 lignes à la fois
     const { data, error } = await supabase.from("feeds").select("*")
@@ -821,14 +834,42 @@ async function fetchFeeds() {
   return all;
 }
 
+/** Total « depuis le début » : l'app ne charge que les derniers jours, donc la
+ *  base additionne ce qui est plus vieux (RPC baby_totals) et l'app y ajoute les
+ *  boires qu'elle a en main — le compteur bouge ainsi tout de suite, même hors
+ *  ligne. Si la fonction n'existe pas encore dans la base, on garde l'ancien total. */
+async function fetchOlderTotals(before) {
+  const { data, error } = await supabase.rpc("baby_totals", { p_before: before });
+  if (error) { console.warn("baby_totals", error.message); return null; }
+  return Object.fromEntries((data || []).map((r) => [r.baby_id, { ml: Number(r.total_ml) || 0, count: Number(r.feeds) || 0, first: r.first_at }]));
+}
+function lifetime(babyId = state.babyId) {
+  const older = state.older?.[babyId] || { ml: 0, count: 0, first: null };
+  const mine = state.feeds.filter((f) => f.baby_id === babyId);
+  const firstLocal = mine.length ? mine.reduce((a, f) => (f.started_at < a ? f.started_at : a), mine[0].started_at) : null;
+  return {
+    ml: older.ml + mine.reduce((t, f) => t + Number(f.amount_ml), 0),
+    count: older.count + mine.length,
+    first: older.first || firstLocal,
+  };
+}
+/** « 12 345 ml » ; au-delà de 10 L on ajoute les litres. En oz : « 417 oz ». */
+function lifetimeLabel(ml) {
+  const group = (n) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, "\u202f");
+  if (unit() === "oz") return `${group(Math.round(ml / 29.5735))} oz`;
+  return `${group(Math.round(ml))} ml${ml >= 10000 ? ` · ${(Math.round(ml / 100) / 10).toString().replace(".", ",")} L` : ""}`;
+}
+
 let loading = null;
 function loadAll(preferBabyId = null) {
   loading ||= (async () => {
     try {
-      const [b, c, feeds] = await Promise.all([
+      const since = new Date(Date.now() - HISTORY_DAYS * DAY).toISOString();
+      const [b, c, feeds, older] = await Promise.all([
         supabase.from("babies").select("*").order("created_at"),
         supabase.from("caregivers").select("*").order("created_at"),
-        fetchFeeds(),
+        fetchFeeds(since),
+        fetchOlderTotals(since),
       ]);
       if (b.error) throw b.error;
       if (c.error) throw c.error;
@@ -841,6 +882,7 @@ function loadAll(preferBabyId = null) {
         render("onboard"); return true;
       }
       state.feeds = applyQueue(feeds);
+      if (older) state.older = older;
       state.syncedAt = Date.now();
       state.offlineData = false; state.online = true;
       chooseBaby(preferBabyId);
@@ -1092,7 +1134,7 @@ async function signOut() {
 
 function resetToSignedOut() {
   snapshot.clear(); queue.clear();
-  Object.assign(state, { user: null, babies: [], caregivers: [], feeds: [], babyId: null, pending: 0, offlineData: false, syncedAt: null, tab: "home" });
+  Object.assign(state, { user: null, babies: [], caregivers: [], feeds: [], older: {}, babyId: null, pending: 0, offlineData: false, syncedAt: null, tab: "home" });
   if (state.sheet) closeSheet();
   render("auth");
 }
