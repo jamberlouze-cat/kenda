@@ -2,7 +2,7 @@
 
 Petite app web (PWA) pour suivre les boires de bébé, partagée **en temps réel**
 entre les deux parents. Saisie en trois touches, compteurs « aujourd'hui » et
-« dernières 24 h » toujours visibles, historique jour / semaine / 2 semaines,
+« dernières 24 h » toujours visibles, historique semaine / 2 semaines avec calendrier,
 horaire type, plusieurs bébés, et ça marche **hors ligne**.
 
 - Aucune compilation, aucun `npm` : juste des fichiers statiques (comme Calico et Panache).

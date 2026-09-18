@@ -4,7 +4,7 @@ import { queue, snapshot, babyMemory, nameMemory, applyQueue } from "./lib/store
 import {
   fromUnit, formatAmount, startOfDay, addDays, dayKey, sortDesc,
   totalToday, totalLast24h, lastFeed, formatElapsed,
-  groupByDay, dailySeries, comparePeriods, compareToday,
+  groupByDay, dailySeries, comparePeriods,
   findPatterns, hourHistogram,
 } from "./lib/stats.js";
 
@@ -28,7 +28,7 @@ const state = {
   syncedAt: null,
   pending: queue.size(),
   listOpen: true,       // accueil : derniers boires dépliés
-  range: "week",        // day | week | 2weeks
+  range: "week",        // week | 2weeks
   metric: "total",      // total | count | interval
   sheet: null,
   authError: "", recovery: false, error: "",
@@ -263,14 +263,6 @@ const fmtInterval = (ms) => (ms == null ? "—" : formatElapsed(ms));
 
 function compareCard() {
   const now = new Date(), feeds = babyFeeds();
-  if (state.range === "day") {
-    const c = compareToday(feeds, now);
-    return `<section class="tiles">
-      <div class="tile"><p class="tile-label">Aujourd'hui</p><p class="tile-num">${amount(c.today.total)}</p><p class="meta">${plural(c.today.count, "boire")}</p></div>
-      <div class="tile"><p class="tile-label">Hier, à cette heure-ci</p><p class="tile-num">${amount(c.yesterdaySoFar.total)}</p><p class="meta">${plural(c.yesterdaySoFar.count, "boire")}</p></div>
-      <div class="tile"><p class="tile-label">Hier, au total</p><p class="tile-num">${amount(c.yesterday.total)}</p><p class="meta">${plural(c.yesterday.count, "boire")}</p></div>
-    </section>`;
-  }
   const days = state.range === "week" ? 7 : 14;
   const { current: a, previous: b } = comparePeriods(feeds, days, now);
   const vs = `vs les ${days} jours d'avant`;
@@ -285,19 +277,6 @@ function compareCard() {
 
 function chartCard() {
   const now = new Date(), feeds = babyFeeds();
-  if (state.range === "day") {
-    const key = dayKey(now);
-    const list = feeds.filter((f) => dayKey(f.started_at) === key);
-    const max = Math.max(1, ...list.map((f) => Number(f.amount_ml)));
-    const minuteOf = (d) => { const x = new Date(d); return x.getHours() * 60 + x.getMinutes(); };
-    const bars = list.map((f) =>
-      `<span class="tl-bar ${f.kind}" style="left:${(minuteOf(f.started_at) / 1440) * 100}%;height:${Math.max(8, (Number(f.amount_ml) / max) * 100)}%"></span>`).join("");
-    return `<section class="card chart-card">
-      <div class="section-head"><h2>La journée</h2><span class="meta">un trait par boire</span></div>
-      <div class="timeline">${bars}<span class="tl-now" style="left:${(minuteOf(now) / 1440) * 100}%"></span></div>
-      <div class="tl-axis"><span>0 h</span><span>6 h</span><span>12 h</span><span>18 h</span><span>24 h</span></div>
-    </section>`;
-  }
   const days = state.range === "week" ? 7 : 14;
   const series = dailySeries(feeds, days, now);
   const pick = { total: (d) => d.total, count: (d) => d.count, interval: (d) => d.avgInterval || 0 }[state.metric];
@@ -323,7 +302,6 @@ function chartCard() {
 }
 
 function patternCard() {
-  if (state.range === "day") return "";
   const now = new Date(), feeds = babyFeeds();
   const days = state.range === "week" ? 7 : 14;
   const p = findPatterns(feeds, now, days);
@@ -379,7 +357,7 @@ function weekCalendarCard() {
 
 function viewHistory() {
   const now = new Date();
-  const days = state.range === "day" ? 1 : state.range === "week" ? 7 : 14;
+  const days = state.range === "week" ? 7 : 14;
   const from = addDays(startOfDay(now), -(days - 1)).getTime();
   const groups = groupByDay(babyFeeds().filter((f) => new Date(f.started_at).getTime() >= from));
   const seg = (r, l) => `<button class="${state.range === r ? "on" : ""}" data-action="range" data-range="${r}">${l}</button>`;
@@ -389,9 +367,9 @@ function viewHistory() {
           <span class="day-total">${amount(g.total)} <small>· ${plural(g.count, "boire")}</small></span></div>
         <div class="card list">${g.feeds.map((f) => feedRow(f, maxAmount(g.feeds))).join("")}</div>
       </div>`).join("")
-    : `<div class="empty">Aucun boire ${days === 1 ? "aujourd'hui" : "sur cette période"}.</div>`;
+    : `<div class="empty">Aucun boire sur cette période.</div>`;
   return `
-    <div class="segmented">${seg("day", "Jour")}${seg("week", "Semaine")}${seg("2weeks", "2 semaines")}</div>
+    <div class="segmented">${seg("week", "Semaine")}${seg("2weeks", "2 semaines")}</div>
     ${state.range === "week" ? weekCalendarCard() : ""}
     ${compareCard()}
     ${chartCard()}

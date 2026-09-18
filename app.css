@@ -225,11 +225,6 @@ select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.o
 .bar-x { font-size: 11px; color: var(--muted); }
 .bar-col.today .bar-x { color: var(--blue-dark); font-weight: 700; }
 
-.timeline { position: relative; height: 96px; background: var(--cream); border-radius: 12px; margin: 0 4px; overflow: hidden; }
-.tl-bar { position: absolute; bottom: 0; width: 7px; margin-left: -3.5px; border-radius: 4px 4px 0 0; }
-.tl-bar.maternel { background: var(--lilac); }
-.tl-bar.formule { background: var(--blue); }
-.tl-now { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1.5px dashed var(--muted); opacity: .5; }
 .tl-axis { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin: 6px 4px 0; }
 
 .pattern-card { padding: 18px; }
