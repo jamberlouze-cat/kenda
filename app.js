@@ -573,14 +573,15 @@ function moveDrag(y) {
   if (!dragging) return;
   const { item } = dragging, gap = 10;
   let dy = y - dragging.y;
-  // Un grand geste peut sauter plusieurs voisines d'un coup.
-  for (;;) {
+  // Un grand geste peut sauter plusieurs voisines d'un coup. Le seuil est la
+  // moitié du déplacement d'une permutation (hauteur + espace) : avec un seuil
+  // plus petit, monter puis redescendre permutait sans fin (écran figé).
+  for (let n = 0; n < 10; n++) {
     const prev = item.previousElementSibling, next = item.nextElementSibling;
-    if (dy < 0 && prev && -dy > prev.offsetHeight / 2) {
-      const h = prev.offsetHeight + gap; item.parentElement.insertBefore(prev, item.nextElementSibling); dragging.y -= h; dy += h;
-    } else if (dy > 0 && next && dy > next.offsetHeight / 2) {
-      const h = next.offsetHeight + gap; item.parentElement.insertBefore(next, item); dragging.y += h; dy -= h;
-    } else break;
+    const up = prev && prev.offsetHeight + gap, down = next && next.offsetHeight + gap;
+    if (dy < 0 && prev && -dy > up / 2) { item.parentElement.insertBefore(prev, item.nextElementSibling); dragging.y -= up; dy += up; }
+    else if (dy > 0 && next && dy > down / 2) { item.parentElement.insertBefore(next, item); dragging.y += down; dy -= down; }
+    else break;
   }
   item.style.transform = `translateY(${dy}px)`;
 }
