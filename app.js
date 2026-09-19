@@ -22,7 +22,7 @@ const CAREGIVER_COLORS = ["#6B5A85", "#3E6B7A", "#8A6D4B", "#5F7F5A", "#9A5F72",
 const REMIND_CHOICES = [null, 120, 150, 180, 210, 240, 300];
 // Les blocs de l'accueil. L'ordre et l'état de chacun sont un réglage du bébé (babies.modules).
 const MODULES = {
-  biberon: { label: "Biberon", icon: "bottle" },
+  biberon: { label: "Boires", icon: "drop" },      // id historique : « biberon »
   couches: { label: "Couches", icon: "diaper" },
   croissance: { label: "Croissance", icon: "ruler" },
   premieres: { label: "Premières de bébé", icon: "star" },
@@ -129,6 +129,7 @@ const ICONS = {
   play: '<path d="M8 5.5v13l10-6.5z"/>',
   pause: '<path d="M8 5v14M16 5v14"/>',
   pencil: '<path d="M4 20l4.5-1L19 8.5l-3.5-3.5L5 15.5z"/><path d="M13.5 7l3.5 3.5"/>',
+  drop: '<path d="M12 3.5c-2.5 3.2-6 7.3-6 11a6 6 0 0 0 12 0c0-3.7-3.5-7.8-6-11z"/>',
 };
 function icon(name) {
   return `<svg class="ic ic-${name}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ""}</svg>`;
@@ -153,9 +154,11 @@ const ofBaby = (table) => state[table].filter((r) => r.baby_id === state.babyId)
 function moduleList(baby = currentBaby()) {
   const saved = (Array.isArray(baby?.modules) ? baby.modules : []).filter((m) => MODULES[m?.id]);
   const seen = new Set(saved.map((m) => m.id));
-  return [...saved.map((m) => ({ id: m.id, on: m.on !== false })), ...Object.keys(MODULES).filter((id) => !seen.has(id)).map((id) => ({ id, on: true }))];
+  return [...saved.map((m) => ({ id: m.id, on: m.on !== false, bottle: m.bottle !== false })), ...Object.keys(MODULES).filter((id) => !seen.has(id)).map((id) => ({ id, on: true, bottle: true }))];
 }
 const moduleOn = (id) => moduleList().find((m) => m.id === id)?.on !== false;
+/** Le biberon est une sous-option de « Boires » (gardée dans babies.modules), comme l'allaitement (babies.nursing). */
+const bottleOn = () => moduleList().find((m) => m.id === "biberon")?.bottle !== false;
 const fmtDate = (day, opts = { day: "numeric", month: "short", year: "numeric" }) => fr(parseDay(day), opts);
 const todayKey = () => dayKey(new Date());
 
@@ -285,7 +288,7 @@ function homeFeeds() {
 
   let hero;
   if (!last) {
-    hero = `<div class="hero"><span class="hero-icon">${icon("bottle")}</span>
+    hero = `<div class="hero"><span class="hero-icon">${icon("drop")}</span>
       <div class="hero-text"><p class="hero-title">Aucun boire noté</p>
       <p class="meta">Touche le « + » pour commencer le suivi de ${esc(baby.name)}.</p></div></div>`;
   } else {
@@ -560,7 +563,7 @@ function pageGrowth() {
 
 // ------------------------------------------------------- gérer les modules ---
 function openModules() {
-  state.modulesDraft = { list: moduleList().map((m) => ({ ...m })), kinds: [...enabledKinds()], nursing: nursingOn() };
+  state.modulesDraft = { list: moduleList().map((m) => ({ ...m })), kinds: [...enabledKinds()], nursing: nursingOn(), bottle: bottleOn() };
   state.page = "modules"; renderApp(); window.scrollTo(0, 0);
 }
 function pageModules() {
@@ -582,8 +585,12 @@ function pageModules() {
         ${m.id === "biberon" ? `<div class="mod-line sub ${m.on ? "" : "off"}">
           <span class="mod-name">Allaitement</span>
           <button class="switch-btn" data-action="draft-nursing" role="switch" aria-checked="${d.nursing}" aria-label="Allaitement"><span class="switch ${d.nursing ? "on" : ""}"></span></button>
-        </div>` + Object.entries(KINDS).map(([k, l]) => `
+        </div>
         <div class="mod-line sub ${m.on ? "" : "off"}">
+          <span class="mod-name">Biberon</span>
+          <button class="switch-btn" data-action="draft-bottle" role="switch" aria-checked="${d.bottle}" aria-label="Biberon"><span class="switch ${d.bottle ? "on" : ""}"></span></button>
+        </div>` + Object.entries(KINDS).map(([k, l]) => `
+        <div class="mod-line sub sub2 ${m.on && d.bottle ? "" : "off"}">
           <span class="mod-name">${l}</span>
           <button class="switch-btn" data-action="draft-kind" data-kind="${k}" role="switch" aria-checked="${d.kinds.includes(k)}" aria-label="${l}"><span class="switch ${d.kinds.includes(k) ? "on" : ""}"></span></button>
         </div>`).join("") : ""}
@@ -638,11 +645,12 @@ document.addEventListener("mouseup", endDrag);
 window.addEventListener("blur", endDrag);
 
 function saveModules() {
-  const d = state.modulesDraft;
-  if (d.list.find((m) => m.id === "biberon")?.on && !d.kinds.length) { toast("Garde au moins un type de lait actif"); return; }
+  const d = state.modulesDraft, boires = d.list.find((m) => m.id === "biberon");
+  if (boires?.on && !d.nursing && !d.bottle) { toast("Garde l'allaitement ou le biberon actif"); return; }
+  if (boires?.on && d.bottle && !d.kinds.length) { toast("Garde au moins un type de lait actif"); return; }
   const kinds = d.kinds.length ? Object.keys(KINDS).filter((k) => d.kinds.includes(k)) : enabledKinds();
   state.page = null; state.modulesDraft = null;
-  updateBaby({ modules: d.list.map(({ id, on }) => ({ id, on })), kinds, nursing: d.nursing }, "Modules enregistrés");
+  updateBaby({ modules: d.list.map(({ id, on }) => (id === "biberon" ? { id, on, bottle: d.bottle } : { id, on })), kinds, nursing: d.nursing }, "Modules enregistrés");
 }
 
 // --------------------------------------------------------------- historique ---
@@ -2093,7 +2101,11 @@ document.addEventListener("click", async (e) => {
     case "retry": render("loading"); return boot();
 
     // boires
-    case "add-feed": return nursingOn() ? openSheet({ type: "feedChoice" }) : openFeedSheet(null);
+    case "add-feed":
+      if (nursingOn() && bottleOn()) return openSheet({ type: "feedChoice" });
+      if (nursingOn()) return openNursingSheet(null);
+      if (bottleOn()) return openFeedSheet(null);
+      return toast("Active l'allaitement ou le biberon dans « Gérer les modules »");
     case "choose-bottle": closeSheet(); return openFeedSheet(null);
     case "choose-nursing": closeSheet(); return openNursingSheet(null);
     case "edit-nursing": { const n = state.nursings.find((x) => x.id === btn.dataset.id); if (n) openNursingSheet(n); return; }
@@ -2108,6 +2120,7 @@ document.addEventListener("click", async (e) => {
     case "pump-mode": state.sheet.mode = btn.dataset.mode; return renderSheetKeep();
     case "pump-abandon": timerMemory.clear("pump"); closeSheet(); renderMain(); return toast("Séance abandonnée");
     case "draft-nursing": state.modulesDraft.nursing = !state.modulesDraft.nursing; return renderMain();
+    case "draft-bottle": state.modulesDraft.bottle = !state.modulesDraft.bottle; return renderMain();
     case "edit-feed": { const f = state.feeds.find((x) => x.id === btn.dataset.id); if (f) openFeedSheet(f); return; }
     case "feed-kind":
       state.sheet.kind = btn.dataset.kind;      // sans redessiner : la quantité en cours de saisie reste
