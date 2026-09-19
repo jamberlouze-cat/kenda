@@ -233,7 +233,7 @@ function renderMain() {
   renderTotals();
   // Ne pas écraser un champ des paramètres pendant qu'on y écrit.
   if (state.tab === "settings" && main.contains(document.activeElement) && document.activeElement.tagName === "INPUT") return;
-  if (state.page === "modules" && dragging) return;
+  if (state.page === "modules" && dragging?.item.isConnected) return;
   main.innerHTML = state.page ? viewPage() : state.tab === "history" ? viewHistory() : state.tab === "settings" ? viewSettings() : viewHome();
 }
 
@@ -560,21 +560,19 @@ function pageModules() {
 }
 
 // Glisser-déposer des modules : la ligne suit le doigt, et ce sont ses VOISINES
-// qu'on déplace dans la page (déplacer la ligne tenue lui ferait lâcher le pointeur).
+// qu'on déplace dans la page. Événements tactiles sur iPhone (les événements
+// « pointer » y lâchent le doigt de façon imprévisible), souris ailleurs.
 let dragging = null;
-document.addEventListener("pointerdown", (e) => {
-  const handle = e.target.closest?.(".drag-handle");
-  if (!handle || !state.modulesDraft) return;
+function startDrag(handle, y) {
+  if (!handle || !state.modulesDraft || dragging) return;
   const item = handle.closest(".mod-item");
-  dragging = { item, y: e.clientY };
+  dragging = { item, y };
   item.classList.add("dragging");
-  handle.setPointerCapture?.(e.pointerId);
-  e.preventDefault();
-});
-document.addEventListener("pointermove", (e) => {
+}
+function moveDrag(y) {
   if (!dragging) return;
   const { item } = dragging, gap = 10;
-  let dy = e.clientY - dragging.y;
+  let dy = y - dragging.y;
   // Un grand geste peut sauter plusieurs voisines d'un coup.
   for (;;) {
     const prev = item.previousElementSibling, next = item.nextElementSibling;
@@ -585,7 +583,7 @@ document.addEventListener("pointermove", (e) => {
     } else break;
   }
   item.style.transform = `translateY(${dy}px)`;
-});
+}
 function endDrag() {
   if (!dragging) return;
   const { item } = dragging; dragging = null;
@@ -593,8 +591,19 @@ function endDrag() {
   const order = [...document.querySelectorAll("#mod-list .mod-item")].map((el) => el.dataset.id), d = state.modulesDraft;
   if (d) d.list.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
 }
-document.addEventListener("pointerup", endDrag);
-document.addEventListener("pointercancel", endDrag);
+const dragHandle = (e) => e.target.closest?.(".drag-handle");
+document.addEventListener("touchstart", (e) => {
+  const h = dragHandle(e); if (!h) return;
+  e.preventDefault();                       // pas de défilement ni de sélection pendant le glisser
+  startDrag(h, e.touches[0].clientY);
+}, { passive: false });
+document.addEventListener("touchmove", (e) => { if (dragging) { e.preventDefault(); moveDrag(e.touches[0].clientY); } }, { passive: false });
+document.addEventListener("touchend", endDrag);
+document.addEventListener("touchcancel", endDrag);
+document.addEventListener("mousedown", (e) => { const h = dragHandle(e); if (h) { e.preventDefault(); startDrag(h, e.clientY); } });
+document.addEventListener("mousemove", (e) => moveDrag(e.clientY));
+document.addEventListener("mouseup", endDrag);
+window.addEventListener("blur", endDrag);
 
 function saveModules() {
   const d = state.modulesDraft;

@@ -422,7 +422,7 @@ button.form-row { width: 100%; text-align: left; }
 
 /* gérer les modules */
 .mod-list { display: flex; flex-direction: column; gap: 10px; }
-.mod-item { background: var(--cream-dark); border-radius: var(--radius-sm); padding: 4px 12px 4px 6px; border-left: 4px solid var(--lilac); transition: box-shadow var(--ease); }
+.mod-item { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; background: var(--cream-dark); border-radius: var(--radius-sm); padding: 4px 12px 4px 6px; border-left: 4px solid var(--lilac); transition: box-shadow var(--ease); }
 .mod-item.couches { border-left-color: var(--yellow); }
 .mod-item.croissance { border-left-color: var(--green); }
 .mod-item.premieres { border-left-color: var(--sky); }
