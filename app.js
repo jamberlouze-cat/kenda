@@ -109,7 +109,7 @@ const ICONS = {
   refresh: '<path d="M20 11a8 8 0 0 0-14.5-4M4 4v4h4"/><path d="M4 13a8 8 0 0 0 14.5 4M20 20v-4h-4"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   trash: '<path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13"/>',
-  bottle: '<path d="M10.5 5.5c0-2 .5-3 1.5-3s1.5 1 1.5 3"/><rect x="8" y="5.5" width="8" height="3" rx="1"/><path d="M9 8.5V19a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2V8.5"/><path d="M9 13h2.5M9 16.5h2.5"/>',
+  bottle: '<path d="M10.2 5.5v-.9c0-1.3.8-2.4 1.8-2.4s1.8 1.1 1.8 2.4v.9"/><rect x="8.2" y="5.5" width="7.6" height="2.8" rx="1.2"/><path d="M9.2 8.3c-2 .9-3.4 2.7-3.4 4.8V18a3.2 3.2 0 0 0 3.2 3.2h6a3.2 3.2 0 0 0 3.2-3.2v-4.9c0-2.1-1.4-3.9-3.4-4.8"/><path d="M8.3 13.6h2.4M8.3 16.6h2.4"/>',
   baby: '<circle cx="12" cy="13" r="8"/><path d="M9.5 12.5v.01M14.5 12.5v.01"/><path d="M10 16c1.2 1 2.8 1 4 0"/><path d="M12 5c0-1.6 1.6-2.2 2.6-1.2"/>',
   users: '<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.5"/><path d="M17 14.5c2.5 0 4 2 4 5"/>',
   logout: '<path d="M14 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2v-2"/><path d="M9 12h12M18 9l3 3-3 3"/>',
@@ -151,8 +151,7 @@ function moduleList(baby = currentBaby()) {
 const moduleOn = (id) => moduleList().find((m) => m.id === id)?.on !== false;
 const fmtDate = (day, opts = { day: "numeric", month: "short", year: "numeric" }) => fr(parseDay(day), opts);
 const todayKey = () => dayKey(new Date());
-/** Premier émoji d'un titre (« 😀 Premier sourire »), s'il y en a un. */
-const leadingEmoji = (s) => String(s || "").match(/^\s*(\p{Extended_Pictographic}(?:\uFE0F|\u200D\p{Extended_Pictographic})*)/u)?.[1] || "";
+
 
 // ================================================================== RENDU ===
 function render(view) {
@@ -367,27 +366,29 @@ function homeGrowth() {
 // ---------------------------------------------------- accueil : premières ---
 function firstBadge(f) {
   const photo = f.has_photo ? photos.get(f.id) : null;
-  if (photo) return `<span class="hero-icon photo"><img src="${esc(photo)}" alt=""></span>`;
-  const e = leadingEmoji(f.title);
-  return `<span class="hero-icon ${e ? "emoji" : ""}">${e ? esc(e) : icon("star")}</span>`;
+  return photo ? `<span class="hero-icon photo"><img src="${esc(photo)}" alt=""></span>` : `<span class="hero-icon">${icon("star")}</span>`;
 }
-const firstTitle = (f) => { const e = leadingEmoji(f.title); return (e && f.title.trim().slice(e.length).trim()) || f.title; };
+const firstTitle = (f) => f.title;
 function firstWhen(f) {
   const baby = currentBaby();
   const age = baby.birth_date && f.happened_on >= baby.birth_date ? ` · ${ageLabel(baby.birth_date, f.happened_on)}` : "";
   return `${fmtDate(f.happened_on)}${age}`;
 }
+/** Un polaroïd par première, de la plus récente à la plus ancienne, à faire défiler du doigt. */
 function homeFirsts() {
-  const last = sortBy(ofBaby("firsts"), "happened_on")[0], baby = currentBaby();
-  const hero = last ? `<button class="hero hero-btn" data-action="edit-premieres" data-id="${last.id}">
-      ${firstBadge(last)}
-      <div class="hero-text"><p class="hero-title wrap">${esc(firstTitle(last))}</p>
-        <p class="meta">${esc(firstWhen(last))}</p></div>
-      <span class="chev">${icon("right")}</span></button>`
+  const rows = sortBy(ofBaby("firsts"), "happened_on"), baby = currentBaby();
+  const body = rows.length ? `<div class="polaroids">${rows.map((f) => {
+    const photo = f.has_photo ? photos.get(f.id) : null;
+    return `<button class="polaroid" data-action="edit-premieres" data-id="${f.id}">
+        <span class="polaroid-photo">${photo ? `<img src="${esc(photo)}" alt="">` : icon("star")}</span>
+        <span class="polaroid-title">${esc(f.title)}</span>
+        <span class="meta">${esc(firstWhen(f))}</span>
+      </button>`;
+  }).join("")}</div>`
     : `<div class="hero"><span class="hero-icon">${icon("star")}</span>
       <div class="hero-text"><p class="hero-title">Aucune première notée</p>
       <p class="meta">Premier sourire, premier bain… touche le « + » pour garder les grands moments de ${esc(baby.name)}.</p></div></div>`;
-  return moduleCard("premieres", "Premières de bébé", "Ajouter une première", hero, last ? { page: "firsts", label: "Voir tout" } : null);
+  return moduleCard("premieres", "Premières de bébé", "Ajouter une première", body, rows.length ? { page: "firsts", label: "Voir tout" } : null);
 }
 
 // =============================================================== SOUS-ÉCRANS ===
@@ -757,7 +758,6 @@ function viewHistory() {
 function viewSettings() {
   const baby = currentBaby(), mine = me();
   const people = state.caregivers.filter((c) => c.baby_id === baby.id);
-  const kinds = enabledKinds();
   const remind = (m) => (m == null ? "Aucune" : formatElapsed(m * 60000));
   return `
     <section class="card form-card">
@@ -777,15 +777,14 @@ function viewSettings() {
           <button class="${baby.unit === "ml" ? "on" : ""}" data-action="set-unit" data-unit="ml">Millilitres (ml)</button>
           <button class="${baby.unit === "oz" ? "on" : ""}" data-action="set-unit" data-unit="oz">Onces (oz)</button>
         </div>
-        <p class="meta">Choisie une fois pour tout le monde ; la saisie ne la redemande jamais.</p></div>
+</div>
       <div class="field"><label>Sexe</label>
         <div class="segmented">
           <button class="${baby.sex === "f" ? "on" : ""}" data-action="set-sex" data-sex="f">Fille</button>
           <button class="${baby.sex === "m" ? "on" : ""}" data-action="set-sex" data-sex="m">Garçon</button>
         </div></div>
       <div class="field"><label for="set-birth">Date de naissance</label>
-        <input type="date" id="set-birth" value="${esc(baby.birth_date || "")}" max="${todayKey()}" data-change="set-birth">
-        <p class="meta">Le sexe et la date de naissance servent aux courbes de croissance (percentiles de l'OMS) et à l'âge affiché sur les premières.</p></div>
+        <input type="date" id="set-birth" value="${esc(baby.birth_date || "")}" max="${todayKey()}" data-change="set-birth"></div>
       <div class="field"><label>Unités de la croissance</label>
         <div class="segmented">
           <button class="${weightUnit() === "kg" ? "on" : ""}" data-action="set-weight-unit" data-unit="kg">Kilogrammes</button>
@@ -795,10 +794,6 @@ function viewSettings() {
           <button class="${lengthUnit() === "cm" ? "on" : ""}" data-action="set-length-unit" data-unit="cm">Centimètres</button>
           <button class="${lengthUnit() === "po" ? "on" : ""}" data-action="set-length-unit" data-unit="po">Pouces</button>
         </div></div>
-      <div class="field"><label>Modules de l'accueil</label>
-        <button class="btn ghost block modules-btn" data-action="open-page" data-page="modules">${icon("grip")} Gérer les modules
-          <span class="meta">${moduleList().filter((m) => m.on).map((m) => MODULES[m.id].label).join(" · ") || "aucun"}</span></button>
-        <p class="meta">Ordre des blocs, modules affichés, types de lait proposés (${kinds.map((k) => KIND_SHORT[k]).join(", ")}).</p></div>
       <div class="field"><label for="set-remind">Alerte douce sur l'accueil après</label>
         <select id="set-remind" data-change="set-remind">
           ${REMIND_CHOICES.map((m) => `<option value="${m ?? ""}" ${(baby.remind_after_min ?? null) === m ? "selected" : ""}>${remind(m)}</option>`).join("")}
@@ -812,7 +807,7 @@ function viewSettings() {
         <div class="row"><div class="code">${esc(baby.join_code)}</div>
           <button class="icon-btn" data-action="copy-code" aria-label="Copier le code">${icon("copy")}</button>
           ${navigator.share ? `<button class="icon-btn" data-action="share-code" aria-label="Partager le code">${icon("share")}</button>` : ""}</div>
-        <p class="meta">Ta conjointe ouvre Kenda, crée son compte, puis choisit « Rejoindre avec un code ». Chaque bébé a son propre code.</p></div>
+</div>
       <div class="field"><label>Personnes qui suivent ${esc(baby.name)}</label>
         <div class="people">${people.map((c) => `
           <div class="person"><span class="avatar" style="background:${esc(c.color || CAREGIVER_COLORS[0])}">${esc(c.name.charAt(0).toUpperCase())}</span>
@@ -837,8 +832,8 @@ function viewSettings() {
       <h2>Compte</h2>
       <p class="meta">${esc(state.user?.email || "")}</p>
       <button class="btn ghost block danger" data-action="signout">${icon("logout")} Se déconnecter</button>
-      <p class="meta center">Kenda ${VERSION}${window.KENDA_DEV ? " · DEV" : ""}</p>
-    </section>`;
+    </section>
+    <p class="meta center version">Kenda ${VERSION}${window.KENDA_DEV ? " · DEV" : ""}</p>`;
 }
 
 // ------------------------------------------------------ écrans hors de l'app ---
@@ -1200,7 +1195,6 @@ function sheetDiaper() {
       <span class="row-label">Érythème fessier</span>
       <span class="switch ${s.rash ? "on" : ""}"></span>
     </button>
-    <p class="meta sheet-note">Ni mouillée ni sale = couche sèche.</p>
     ${deleteFoot(s, "cette couche")}`;
 }
 function saveDiaper() {
@@ -1239,7 +1233,6 @@ function sheetGrowth() {
     <label class="form-row"><span class="row-label">Tour de tête</span>${num("g-head", s.head, lu)}</label>
     ${noteRow(s.note)}
     ${photoRow(s)}
-    <p class="meta sheet-note">Remplis seulement ce que tu as mesuré. Les unités se changent dans les Paramètres.</p>
     ${deleteFoot(s, "ces mesures")}`;
 }
 const numVal = (id) => { const v = parseFloat(($(`#${id}`)?.value || "").replace(",", ".")); return Number.isFinite(v) && v > 0 ? v : null; };
@@ -1275,11 +1268,10 @@ function sheetFirst() {
     ${dateRow(s.date)}
     <label class="form-row tall">
       <span class="row-label">Première</span>
-      <input type="text" id="sheet-title" class="row-input" placeholder="Premier sourire 😊" value="${esc(s.title)}" maxlength="120" autocomplete="off" enterkeyhint="done">
+      <input type="text" id="sheet-title" class="row-input" placeholder="Ajouter" value="${esc(s.title)}" maxlength="120" autocomplete="off" enterkeyhint="done">
     </label>
     ${noteRow(s.note)}
     ${photoRow(s)}
-    <p class="meta sheet-note">Un émoji au début du titre devient l'icône de la première.</p>
     ${deleteFoot(s, "cette première")}`;
 }
 function saveFirst() {

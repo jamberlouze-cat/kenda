@@ -75,7 +75,7 @@
           height_cm: i % 2 ? null : Math.round((49.5 + age * 0.11) * 10) / 10, head_cm: i % 3 ? null : Math.round((34.5 + age * 0.06) * 10) / 10,
           note: i === 0 ? "À la naissance, à l'hôpital" : null, photo: null, caregiver_id: max.id, created_at: iso(on), updated_at: iso(on), deleted_at: null });
       });
-      [["🙂 Premier sourire", 38], ["Première nuit de 6 h", 70], ["🛁 Premier bain dans la grande baignoire", 95]].forEach(([title, age]) => {
+      [["Premier sourire", 38], ["Première nuit de 6 h", 70], ["Premier bain dans la grande baignoire", 95]].forEach(([title, age]) => {
         const on = new Date(birth.getTime() + age * DAY);
         if (on > new Date()) return;
         d.firsts.push({ id: uuid(), baby_id: b.id, happened_on: on.toISOString().slice(0, 10), title, note: age === 70 ? "De 22 h à 4 h, sans se réveiller !" : null,
