@@ -473,3 +473,8 @@ textarea.row-input { line-height: 1.35; }
 .polaroid-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .polaroid-photo .ic { width: 44px; height: 44px; stroke-width: 1.3; }
 .polaroid-title { font-family: var(--font-display); font-weight: 400; font-size: 18px; line-height: 1.2; color: var(--sky-dark); }
+/* Paramètres : boutons sobres (plus de lilas), façon segments iOS */
+.form-card .segmented { background: var(--cream-line); }
+.form-card .segmented button.on { background: var(--cream); color: var(--text); box-shadow: 0 1px 4px rgba(74, 66, 56, .14); }
+.form-card .btn.small { background: var(--cream); color: var(--text); border: 1.5px solid var(--cream-line); }
+.form-card .icon-btn { color: var(--text); border: 1.5px solid var(--cream-line); }
