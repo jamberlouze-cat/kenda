@@ -50,6 +50,68 @@ create table if not exists public.feeds (
   deleted_at   timestamptz
 );
 
+-- ---------- Modules : couches, croissance, premières --------------------------
+-- Réglages partagés ajoutés au bébé : sexe et date de naissance (courbes de
+-- croissance de l'OMS), unités de la croissance, modules affichés sur l'accueil
+-- et leur ordre — ex. [{"id":"biberon","on":true},{"id":"couches","on":false}].
+alter table public.babies add column if not exists sex         text check (sex is null or sex in ('f','m'));
+alter table public.babies add column if not exists birth_date  date;
+alter table public.babies add column if not exists weight_unit text not null default 'kg' check (weight_unit in ('kg','lb'));
+alter table public.babies add column if not exists length_unit text not null default 'cm' check (length_unit in ('cm','po'));
+alter table public.babies add column if not exists modules     jsonb;
+
+-- Une couche. Ni mouillée ni sale = sèche. Même mécanique que les boires :
+-- identifiant créé sur l'appareil, suppression douce.
+create table if not exists public.diapers (
+  id           uuid primary key default gen_random_uuid(),
+  baby_id      uuid not null references public.babies(id) on delete cascade,
+  wet          boolean not null default false,
+  dirty        boolean not null default false,
+  rash         boolean not null default false,          -- érythème fessier
+  changed_at   timestamptz not null,
+  caregiver_id uuid references public.caregivers(id) on delete set null,
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now(),
+  deleted_at   timestamptz
+);
+
+-- Une prise de mesures. Toujours en métrique (grammes, centimètres) ; l'app
+-- convertit. Chaque mesure est facultative. La photo est une image « data: »
+-- réduite par l'app (640 px) ; `has_photo` permet de charger la liste sans elle.
+create table if not exists public.growth (
+  id           uuid primary key default gen_random_uuid(),
+  baby_id      uuid not null references public.babies(id) on delete cascade,
+  measured_on  date not null,
+  weight_g     numeric(7,1) check (weight_g  is null or (weight_g  > 0 and weight_g  <= 60000)),
+  height_cm    numeric(5,1) check (height_cm is null or (height_cm > 0 and height_cm <= 200)),
+  head_cm      numeric(5,1) check (head_cm   is null or (head_cm   > 0 and head_cm   <= 100)),
+  note         text check (note is null or length(note) <= 2000),
+  photo        text check (photo is null or length(photo) < 600000),
+  has_photo    boolean generated always as (photo is not null) stored,
+  caregiver_id uuid references public.caregivers(id) on delete set null,
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now(),
+  deleted_at   timestamptz
+);
+
+-- Une « première » de bébé (premier sourire, première fois dans l'eau…).
+create table if not exists public.firsts (
+  id           uuid primary key default gen_random_uuid(),
+  baby_id      uuid not null references public.babies(id) on delete cascade,
+  happened_on  date not null,
+  title        text not null check (length(trim(title)) between 1 and 120),
+  note         text check (note is null or length(note) <= 2000),
+  photo        text check (photo is null or length(photo) < 600000),
+  has_photo    boolean generated always as (photo is not null) stored,
+  caregiver_id uuid references public.caregivers(id) on delete set null,
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now(),
+  deleted_at   timestamptz
+);
+
+create index if not exists idx_diapers_baby_time on public.diapers(baby_id, changed_at desc);
+create index if not exists idx_growth_baby_day   on public.growth(baby_id, measured_on desc);
+create index if not exists idx_firsts_baby_day   on public.firsts(baby_id, happened_on desc);
 create index if not exists idx_caregivers_user on public.caregivers(user_id);
 create index if not exists idx_feeds_baby_time on public.feeds(baby_id, started_at desc);
 
@@ -71,6 +133,17 @@ drop trigger if exists feeds_keep_latest on public.feeds;
 create trigger feeds_keep_latest before update on public.feeds
   for each row execute function public.feeds_keep_latest();
 
+-- Même règle pour les couches, la croissance et les premières.
+drop trigger if exists diapers_keep_latest on public.diapers;
+create trigger diapers_keep_latest before update on public.diapers
+  for each row execute function public.feeds_keep_latest();
+drop trigger if exists growth_keep_latest on public.growth;
+create trigger growth_keep_latest before update on public.growth
+  for each row execute function public.feeds_keep_latest();
+drop trigger if exists firsts_keep_latest on public.firsts;
+create trigger firsts_keep_latest before update on public.firsts
+  for each row execute function public.feeds_keep_latest();
+
 -- ---------- Fonction anti-récursion pour les règles RLS ---------------------
 
 create or replace function public.user_baby_ids()
@@ -88,6 +161,9 @@ $$;
 alter table public.babies     enable row level security;
 alter table public.caregivers enable row level security;
 alter table public.feeds      enable row level security;
+alter table public.diapers    enable row level security;
+alter table public.growth     enable row level security;
+alter table public.firsts     enable row level security;
 
 drop policy if exists b_select on public.babies;
 create policy b_select on public.babies for select
@@ -111,6 +187,21 @@ create policy c_delete_self on public.caregivers for delete
 
 drop policy if exists f_all on public.feeds;
 create policy f_all on public.feeds for all
+  using      (baby_id in (select public.user_baby_ids()))
+  with check (baby_id in (select public.user_baby_ids()));
+
+drop policy if exists d_all on public.diapers;
+create policy d_all on public.diapers for all
+  using      (baby_id in (select public.user_baby_ids()))
+  with check (baby_id in (select public.user_baby_ids()));
+
+drop policy if exists g_all on public.growth;
+create policy g_all on public.growth for all
+  using      (baby_id in (select public.user_baby_ids()))
+  with check (baby_id in (select public.user_baby_ids()));
+
+drop policy if exists p_all on public.firsts;
+create policy p_all on public.firsts for all
   using      (baby_id in (select public.user_baby_ids()))
   with check (baby_id in (select public.user_baby_ids()));
 
@@ -197,7 +288,7 @@ grant execute on function public.join_baby(text, text, text)    to authenticated
 do $$
 declare t text;
 begin
-  foreach t in array array['feeds', 'babies', 'caregivers'] loop
+  foreach t in array array['feeds', 'babies', 'caregivers', 'diapers', 'growth', 'firsts'] loop
     if not exists (select 1 from pg_publication_tables
                    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t) then
       execute format('alter publication supabase_realtime add table public.%I', t);

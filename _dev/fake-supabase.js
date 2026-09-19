@@ -23,7 +23,7 @@
   function iso(ms) { return new Date(ms).toISOString(); }
 
   function seed(mode) {
-    const d = { users: [], babies: [], caregivers: [], feeds: [] };
+    const d = { users: [], babies: [], caregivers: [], feeds: [], diapers: [], growth: [], firsts: [] };
     const u = { id: uuid(), email: "maxime@test.local", password: "secret1" };
     const u2 = { id: uuid(), email: "julie@test.local", password: "secret1" };
     d.users.push(u, u2);
@@ -34,7 +34,8 @@
     const now = Date.now(), DAY = 86400000;
     let s = 11; const rnd = () => { s = (s * 9301 + 49297) % 233280; return s / 233280; };
     function baby(name, code, hours, base, kinds) {
-      const b = { id: uuid(), name, join_code: code, unit: "ml", kinds: ["maternel", "formule"], remind_after_min: 210, created_at: iso(now - 20 * DAY) };
+      const b = { id: uuid(), name, join_code: code, unit: "ml", kinds: ["maternel", "formule"], remind_after_min: 210, created_at: iso(now - 20 * DAY),
+        sex: name === "Milo" ? "m" : "f", birth_date: new Date(now - 130 * DAY).toISOString().slice(0, 10), weight_unit: "kg", length_unit: "cm", modules: null };
       d.babies.push(b);
       const max = { id: uuid(), baby_id: b.id, user_id: u.id, name: "Maxime", color: "#6B5A85", created_at: iso(now - 20 * DAY) };
       const jul = { id: uuid(), baby_id: b.id, user_id: u2.id, name: "Julie", color: "#3E6B7A", created_at: iso(now - 19 * DAY) };
@@ -53,6 +54,33 @@
           });
         });
       }
+      // Couches : 6 à 8 par jour sur 16 jours.
+      for (let day = 16; day >= 0; day--) {
+        const midnight = new Date(now - day * DAY); midnight.setHours(0, 0, 0, 0);
+        for (let i = 0; i < 7; i++) {
+          const at = midnight.getTime() + (i * 200 + 40 + Math.round(rnd() * 90)) * 60000;
+          if (at > now - 30 * 60000) continue;
+          const dirty = rnd() < 0.4;
+          d.diapers.push({ id: uuid(), baby_id: b.id, wet: dirty ? rnd() < 0.6 : true, dirty, rash: rnd() < 0.08, changed_at: iso(at),
+            caregiver_id: (rnd() > 0.5 ? jul : max).id, created_at: iso(at), updated_at: iso(at), deleted_at: null });
+        }
+      }
+      // Croissance : naissance puis toutes les ~3 semaines (à peu près sur le 50e percentile).
+      const birth = new Date(b.birth_date + "T12:00");
+      [0, 7, 21, 42, 63, 91, 120].forEach((age, i) => {
+        const on = new Date(birth.getTime() + age * DAY);
+        if (on > new Date()) return;
+        const kg = 3.3 + age * 0.03 - Math.pow(age, 1.5) * 0.0004 + (rnd() - 0.5) * 0.2;
+        d.growth.push({ id: uuid(), baby_id: b.id, measured_on: on.toISOString().slice(0, 10), weight_g: Math.round(kg * 100) * 10,
+          height_cm: i % 2 ? null : Math.round((49.5 + age * 0.11) * 10) / 10, head_cm: i % 3 ? null : Math.round((34.5 + age * 0.06) * 10) / 10,
+          note: i === 0 ? "À la naissance, à l'hôpital" : null, photo: null, caregiver_id: max.id, created_at: iso(on), updated_at: iso(on), deleted_at: null });
+      });
+      [["🙂 Premier sourire", 38], ["Première nuit de 6 h", 70], ["🛁 Premier bain dans la grande baignoire", 95]].forEach(([title, age]) => {
+        const on = new Date(birth.getTime() + age * DAY);
+        if (on > new Date()) return;
+        d.firsts.push({ id: uuid(), baby_id: b.id, happened_on: on.toISOString().slice(0, 10), title, note: age === 70 ? "De 22 h à 4 h, sans se réveiller !" : null,
+          photo: null, caregiver_id: jul.id, created_at: iso(on), updated_at: iso(on), deleted_at: null });
+      });
       return b;
     }
     baby("Kenda", "KND42", [2.5, 6, 9.25, 12.5, 15.75, 19, 22.25], 110, ["formule", "formule", "maternel"]);
@@ -80,7 +108,7 @@
 
   class Query {
     constructor(table) { this.table = table; this.filters = []; this.orders = []; this.op = "select"; this.slice = null; }
-    select() { return this; }
+    select(cols) { this.cols = cols && cols !== "*" ? cols.split(",").map((c) => c.trim()) : null; return this; }
     eq(k, v) { this.filters.push((r) => r[k] === v); return this; }
     is(k, v) { this.filters.push((r) => (r[k] ?? null) === v); return this; }
     gte(k, v) { this.filters.push((r) => Date.parse(r[k]) >= Date.parse(v)); return this; }
@@ -97,7 +125,8 @@
       if (offline()) return { data: null, error: netError, status: 0 };
       const rows = db[this.table];
       if (this.op === "select") {
-        let out = rows.filter((r) => this.match(r)).map((r) => ({ ...r }));
+        let out = rows.filter((r) => this.match(r)).map((r) => ({ ...r, ...("photo" in r ? { has_photo: r.photo != null } : {}) }));
+        if (this.cols) out = out.map((r) => Object.fromEntries(this.cols.map((c) => [c, r[c] ?? null])));
         for (const [k, asc] of [...this.orders].reverse()) out.sort((a, b) => (a[k] < b[k] ? -1 : a[k] > b[k] ? 1 : 0) * (asc ? 1 : -1));
         if (this.slice) out = out.slice(...this.slice);
         return { data: out, error: null };
@@ -106,6 +135,7 @@
         const p = this.payload;
         if (!myBabyIds().includes(p.baby_id)) return { data: null, error: { message: "new row violates row-level security policy", code: "42501" } };
         if (this.table === "feeds" && !(p.amount_ml > 0 && p.amount_ml <= 1000)) return { data: null, error: { message: "check constraint", code: "23514" } };
+        if (["diapers", "growth", "firsts"].includes(this.table) && !("baby_id" in p)) return { data: null, error: { message: "null value", code: "23502" } };
         let row = rows.find((r) => this.conflict.every((k) => r[k] === p[k]));
         if (row) {
           // Le déclencheur feeds_keep_latest : une version plus vieille est ignorée.

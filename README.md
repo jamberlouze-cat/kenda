@@ -114,6 +114,23 @@ Ouvre l'adresse dans **Safari** → **Partager** → **Sur l'écran d'accueil**.
 - **Horaire type** : nombre médian de boires par jour → regroupement des heures
   de boire en autant de créneaux ; un créneau n'est gardé que s'il revient au
   moins 4 jours sur 10. Demande au moins 3 jours de saisie.
+- **Modules** (Paramètres → Gérer les modules) : Biberon, Couches, Croissance,
+  Premières de bébé. Ordre par glisser-déposer, chacun activable ; un module
+  désactivé disparaît de l'accueil, ses données restent. Sous « Biberon », les
+  types de lait proposés à la saisie.
+- **Couches** : heure (roulette), mouillée et/ou sale (ni l'un ni l'autre =
+  sèche), érythème fessier. Même mécanique hors ligne que les boires.
+- **Croissance** : poids, taille, tour de tête (chacun facultatif), note et
+  photo. En base tout est métrique ; kg ou lb·oz, cm ou po se choisissent dans
+  les Paramètres. Les courbes affichent les percentiles 3, 15, 50, 85 et 97 des
+  normes de l'OMS (`lib/lms.js`, méthode LMS dans `lib/growth.js`) — ce sont
+  les courbes du carnet de santé du Québec. Il faut le sexe et la date de
+  naissance du bébé (Paramètres).
+- **Premières** : date, titre libre (un émoji au début devient l'icône), note,
+  photo ; l'âge du bébé est affiché si la date de naissance est connue.
+- **Photos** des mesures et des premières : réduites à 640 px sur l'appareil,
+  gardées dans la base, mais pas dans l'instantané localStorage (trop petit) :
+  copie dans IndexedDB (`lib/photos.js`), chargée à part de la liste.
 
 ## Structure des fichiers
 
@@ -126,6 +143,9 @@ lib/supabase.js         client Supabase
 lib/vendor/             supabase-js embarqué (pour démarrer hors ligne)
 lib/store.js            file d'attente + instantané (localStorage)
 lib/stats.js            compteurs, tendances, horaire type (fonctions pures)
+lib/growth.js           courbes de croissance : LMS, percentiles, âge, unités
+lib/lms.js              tables LMS de l'OMS (généré, 0-5 ans, garçon/fille)
+lib/photos.js           cache des photos (mémoire + IndexedDB)
 sw.js                   service worker (augmenter CACHE quand la liste SHELL change)
 manifest*.webmanifest   métadonnées PWA (prod et DEV)
 schema.sql              à exécuter dans Supabase
