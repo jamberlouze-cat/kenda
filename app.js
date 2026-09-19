@@ -31,7 +31,7 @@ const MODULES = {
 // Colonnes chargées pour les listes : tout sauf la photo (lib/photos.js s'en occupe).
 const GROWTH_COLS = "id,baby_id,measured_on,weight_g,height_cm,head_cm,note,has_photo,caregiver_id,created_at,updated_at,deleted_at";
 const FIRSTS_COLS = "id,baby_id,happened_on,title,note,has_photo,caregiver_id,created_at,updated_at,deleted_at";
-const PUMP_COLS = "id,baby_id,started_at,duration_sec,amount_ml,left_ml,right_ml,note,has_photo,caregiver_id,created_at,updated_at,deleted_at";
+const PUMP_COLS = "id,baby_id,started_at,duration_sec,amount_ml,left_ml,right_ml,caregiver_id,created_at,updated_at,deleted_at";
 const SYNCED = ["feeds", "diapers", "growth", "firsts", "nursings", "pumpings"];     // tables à saisie hors ligne (file d'attente)
 
 // ------------------------------------------------------------------ state ---
@@ -1064,6 +1064,7 @@ function toggleWheel() {
   if (open) document.activeElement?.blur?.();          // range le clavier numérique
   wheel.hidden = !open;
   $("#feed-when-row").classList.toggle("open", open);
+  $("#sheet")?.classList.toggle("wheel-open", open);
   if (open) wheelShow(state.sheet.time || new Date());
 }
 
@@ -1396,7 +1397,7 @@ async function loadPhotos() {
   if (loadingPhotos) return;
   loadingPhotos = true;
   try {
-    for (const table of ["growth", "firsts", "pumpings"]) {
+    for (const table of ["growth", "firsts"]) {
       const want = state[table].filter((r) => r.has_photo && Date.parse(photos.version(r.id) || 0) !== Date.parse(r.updated_at)).map((r) => r.id);
       for (let i = 0; i < want.length; i += 8) {
         const { data, error } = await supabase.from(table).select("id,photo,updated_at").in("id", want.slice(i, i + 8));
@@ -1549,12 +1550,11 @@ function pagePump() {
       <div class="day-head"><h3>${esc(capitalize(dayLabel(list[0].started_at, now)))}</h3>
         <span class="day-total">${amount(list.reduce((a, p) => a + Number(p.amount_ml), 0))} <small>· ${plural(list.length, "séance")}</small></span></div>
       <div class="card list">${list.map((p) => {
-    const who = caregiver(p.caregiver_id), unsent = queue.all().some((q) => q.id === p.id), photo = p.has_photo ? photos.get(p.id) : null;
+    const who = caregiver(p.caregiver_id), unsent = queue.all().some((q) => q.id === p.id);
     const sides = p.left_ml != null || p.right_ml != null ? `G ${formatAmount(p.left_ml || 0, unit())} · D ${formatAmount(p.right_ml || 0, unit())}` : "";
     return `<button class="feed-row" data-action="edit-tirelait" data-id="${p.id}">
-        ${photo ? `<span class="hero-icon photo small"><img src="${esc(photo)}" alt=""></span>` : ""}
         <span class="feed-main"><span class="feed-time">${fmtTime(p.started_at)}${who ? ` <span class="meta">· ${esc(who.name)}</span>` : ""}${unsent ? ` <span class="unsent">${icon("cloudUp")}</span>` : ""}</span>
-          <span class="meta">${esc([p.duration_sec ? fmtDur(p.duration_sec) : "", sides].filter(Boolean).join(" · "))}${p.note ? ` · ${esc(p.note)}` : ""}</span></span>
+          <span class="meta">${esc([p.duration_sec ? fmtDur(p.duration_sec) : "", sides].filter(Boolean).join(" · "))}</span></span>
         <span class="feed-amount">${formatAmount(p.amount_ml, unit())}<small> ${unit()}</small></span>
         <span class="chev">${icon("right")}</span></button>`;
   }).join("")}</div></div>`).join("");
@@ -1563,8 +1563,7 @@ function openPumpSheet(row) {
   const u = unit(), f = (ml) => (ml == null ? "" : formatAmount(ml, u));
   openSheet({ type: "pump", id: row?.id || null, mode: row ? (row.left_ml != null || row.right_ml != null ? "sides" : "total") : "sides",
     time: row ? new Date(row.started_at) : null, manual: !!row, minutes: row ? Math.round(row.duration_sec / 60) : 0,
-    left: f(row?.left_ml), right: f(row?.right_ml), total: row ? f(row.amount_ml) : "", note: row?.note || "",
-    hasPhoto: !!row?.has_photo, photo: undefined, confirmDelete: false });
+    left: f(row?.left_ml), right: f(row?.right_ml), total: row ? f(row.amount_ml) : "", confirmDelete: false });
 }
 function sheetPump() {
   const s = state.sheet, u = unit(), now = new Date(), t = s.id ? null : timerOf("pump");
@@ -1591,8 +1590,6 @@ function sheetPump() {
     <label class="form-row"><span class="row-label">Quantité droite</span>${num("p-right", s.right, "droite")}</label>
     <div class="form-row total-row"><span class="row-label">Total</span><span class="row-value" id="pump-total">${pumpTotalLabel()}</span></div>`
     : `<label class="form-row"><span class="row-label">Quantité totale</span>${num("p-total", s.total, "total")}</label>`}
-    ${noteRow(s.note)}
-    ${photoRow(s)}
     ${s.id ? deleteFoot(s, "cette séance") : t ? `<div class="sheet-foot"><button class="btn ghost danger" data-action="pump-abandon">${icon("trash")} Abandonner cette séance</button></div>` : ""}`;
 }
 function pumpTotalLabel() {
@@ -1617,10 +1614,8 @@ function savePump() {
   const when = s.time || (t?.startedAt ? new Date(t.startedAt) : new Date());
   if (when.getTime() > Date.now() + 2 * 60000) { toast("L'heure est dans le futur"); return; }
   const existing = s.id ? state.pumpings.find((p) => p.id === s.id) : null;
-  const row = { id: s.id || uuid(), baby_id: state.babyId, started_at: when.toISOString(), duration_sec: Math.round(duration), amount_ml, left_ml, right_ml,
-    note: $("#sheet-note")?.value.trim() || null, caregiver_id: existing ? existing.caregiver_id : me()?.id || null, deleted_at: null };
-  if (s.photo !== undefined) row.photo = s.photo;
-  commitRow("pumpings", row);
+  commitRow("pumpings", { id: s.id || uuid(), baby_id: state.babyId, started_at: when.toISOString(), duration_sec: Math.round(duration), amount_ml, left_ml, right_ml,
+    caregiver_id: existing ? existing.caregiver_id : me()?.id || null, deleted_at: null });
   if (!s.id) timerMemory.clear("pump");
   closeSheet();
   toast(s.id ? "Séance modifiée" : `Séance ajoutée · ${amount(amount_ml)}`, { kind: "ok" });
@@ -2177,7 +2172,7 @@ function renderSheetKeep() {
   for (const el of document.querySelectorAll("#sheet input:not([type=file]), #sheet textarea")) keep[el.id] = el.value;
   if (s.type === "growth") { s.weight = keep["g-weight"] ?? s.weight; s.weightOz = keep["g-weight-oz"] ?? s.weightOz; s.height = keep["g-height"] ?? s.height; s.head = keep["g-head"] ?? s.head; }
   if (s.type === "first") s.title = keep["sheet-title"] ?? s.title;
-  if (s.type === "pump") { s.left = keep["p-left"] ?? s.left; s.right = keep["p-right"] ?? s.right; s.total = keep["p-total"] ?? s.total; if ("p-minutes" in keep) s.minutes = keep["p-minutes"]; }
+  if (s.type === "pump") { if ("p-left" in keep) s.left = keep["p-left"]; if ("p-right" in keep) s.right = keep["p-right"]; if ("p-total" in keep) s.total = keep["p-total"]; if ("p-minutes" in keep) s.minutes = keep["p-minutes"]; }
   if (s.type === "nursing") { if ("n-left" in keep) s.left = keep["n-left"]; if ("n-right" in keep) s.right = keep["n-right"]; }
   if ("sheet-note" in keep) s.note = keep["sheet-note"];
   if ("sheet-date" in keep) s.date = keep["sheet-date"];
