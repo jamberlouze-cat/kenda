@@ -1438,6 +1438,8 @@ async function fetchFeeds(since, table = "feeds", timeCol = "started_at", cols =
     const { data, error } = await supabase.from(table).select(cols)
       .is("deleted_at", null).gte(timeCol, since)
       .order(timeCol, { ascending: false }).range(page * 1000, page * 1000 + 999);
+    // Table d'un module pas encore créée (schema.sql pas repassé) : l'app reste utilisable, le module est vide.
+    if (error && table !== "feeds" && /^(42P01|PGRST205)$/.test(String(error.code))) { console.warn(`table ${table} absente`, error.message); return []; }
     if (error) throw error;
     all.push(...data);
     if (data.length < 1000) break;
