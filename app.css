@@ -478,3 +478,50 @@ textarea.row-input { line-height: 1.35; }
 .form-card .segmented button.on { background: var(--cream); color: var(--text); box-shadow: 0 1px 4px rgba(74, 66, 56, .14); }
 .form-card .btn.small { background: var(--cream); color: var(--text); border: 1.5px solid var(--cream-line); }
 .form-card .icon-btn { color: var(--text); border: 1.5px solid var(--cream-line); }
+
+/* ---------- allaitement & tire-lait ---------- */
+:root { --rose: #F0B8B0; --rose-soft: #FAE3DF; --rose-dark: #7A3E38; }
+.mod-card.tirelait { --mod: var(--rose); --mod-soft: var(--rose-soft); --mod-dark: var(--rose-dark); }
+.page-head.pump h2 { color: var(--rose-dark); }
+.page-head.pump .page-add { background: var(--rose-soft); color: var(--rose-dark); }
+.sheet.mod-pump .sheet-band { background: var(--rose); }
+.sheet.mod-pump .sheet-band h2, .sheet.mod-pump .band-btn, .sheet.mod-pump .band-save { color: var(--rose-dark); }
+.segmented.rose button.on { background: var(--rose); color: var(--rose-dark); }
+.segmented.in-sheet { margin: 12px 20px 4px; }
+.mod-item.tirelait { border-left-color: var(--rose); }
+.mod-item.tirelait .mod-dot { color: var(--rose-dark); }
+.today-line { padding: 0 20px 16px; margin-top: -10px; }
+.hero-nursing { display: flex; align-items: center; gap: 6px; font: 700 16px var(--font-num); color: var(--lilac-dark); white-space: nowrap; }
+.hero-icon.small { width: 32px; height: 32px; }
+.hero-icon.small .ic { width: 20px; height: 20px; transform: none; }
+.cal-mark.allaitement, .cal-legend i.allaitement { background: var(--lilac-dark); }
+/* choix allaitement / biberon */
+.choice-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
+.choice { display: flex; align-items: center; gap: 14px; width: 100%; text-align: left; padding: 14px 16px; border-radius: var(--radius-sm); background: var(--cream-dark); font-family: var(--font-display); font-size: 21px; color: var(--lilac-dark); }
+.choice .kind-dot { width: 46px; height: 46px; }
+.choice .kind-dot .ic { width: 26px; height: 26px; }
+/* minuteurs */
+.running-row { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 12px 20px; border-bottom: 1px solid var(--cream-line); background: var(--lilac-soft); font-weight: 600; color: var(--lilac-dark); }
+.mod-card.tirelait .running-row { background: var(--rose-soft); color: var(--rose-dark); }
+.running-row .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
+.running-row .dot.live { background: var(--success-dark); animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .35; } }
+.running-row .running-time { margin-left: auto; font: 700 15px var(--font-num); font-variant-numeric: tabular-nums; }
+.running-row .ic { width: 18px; height: 18px; color: var(--muted); }
+.sides { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 22px 20px 10px; }
+.sides.one { grid-template-columns: 1fr; justify-items: center; }
+.side { position: relative; display: flex; flex-direction: column; align-items: center; gap: 8px; padding-top: 22px; }
+.last-side { position: absolute; top: 0; font: 500 12px var(--font-body); color: var(--lilac-dark); background: var(--lilac-soft); border-radius: 999px; padding: 2px 10px; }
+.last-side.hidden { visibility: hidden; }
+.timer { font: 300 44px/1 var(--font-display); color: var(--lilac-dark); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.side.live .timer { color: var(--mauve-deep); font-weight: 400; }
+.side-name { font-size: 14px; color: var(--muted); }
+.side .btn-outline { display: inline-flex; align-items: center; gap: 6px; padding: 9px 20px; border-radius: 999px; }
+.side .btn-outline .ic { width: 16px; height: 16px; }
+.side .row-amount input { width: 72px; text-align: center; }
+.link.small { font-size: 13px; padding: 4px 0 8px; display: inline-flex; align-items: center; gap: 5px; }
+.link.small .ic { width: 15px; height: 15px; }
+.mod-pump .timer { color: var(--rose-dark); }
+.mod-pump .side .btn-outline { border-color: var(--rose-dark); color: var(--rose-dark); }
+.total-row { background: var(--cream-dark); }
+.total-row .row-value { font: 700 17px var(--font-num); color: var(--text); }

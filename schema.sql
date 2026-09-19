@@ -59,6 +59,42 @@ alter table public.babies add column if not exists birth_date  date;
 alter table public.babies add column if not exists weight_unit text not null default 'kg' check (weight_unit in ('kg','lb'));
 alter table public.babies add column if not exists length_unit text not null default 'cm' check (length_unit in ('cm','po'));
 alter table public.babies add column if not exists modules     jsonb;
+alter table public.babies add column if not exists nursing     boolean not null default true;   -- allaitement proposé sous « Boires »
+
+-- Une tétée : durée par sein (secondes) et dernier sein donné. Pas de quantité.
+create table if not exists public.nursings (
+  id           uuid primary key default gen_random_uuid(),
+  baby_id      uuid not null references public.babies(id) on delete cascade,
+  started_at   timestamptz not null,
+  left_sec     int not null default 0 check (left_sec between 0 and 43200),
+  right_sec    int not null default 0 check (right_sec between 0 and 43200),
+  last_side    text check (last_side is null or last_side in ('left','right')),
+  caregiver_id uuid references public.caregivers(id) on delete set null,
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now(),
+  deleted_at   timestamptz
+);
+
+-- Une séance de tire-lait. `amount_ml` = total (toujours rempli) ; gauche et
+-- droite seulement si on les a notées séparément. Quantités en ml.
+create table if not exists public.pumpings (
+  id           uuid primary key default gen_random_uuid(),
+  baby_id      uuid not null references public.babies(id) on delete cascade,
+  started_at   timestamptz not null,
+  duration_sec int not null default 0 check (duration_sec between 0 and 43200),
+  amount_ml    numeric(6,1) not null default 0 check (amount_ml >= 0 and amount_ml <= 2000),
+  left_ml      numeric(6,1) check (left_ml  is null or (left_ml  >= 0 and left_ml  <= 1000)),
+  right_ml     numeric(6,1) check (right_ml is null or (right_ml >= 0 and right_ml <= 1000)),
+  note         text check (note is null or length(note) <= 2000),
+  photo        text check (photo is null or length(photo) < 600000),
+  has_photo    boolean generated always as (photo is not null) stored,
+  caregiver_id uuid references public.caregivers(id) on delete set null,
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now(),
+  deleted_at   timestamptz
+);
+create index if not exists idx_nursings_baby_time on public.nursings(baby_id, started_at desc);
+create index if not exists idx_pumpings_baby_time on public.pumpings(baby_id, started_at desc);
 
 -- Une couche. Ni mouillée ni sale = sèche. Même mécanique que les boires :
 -- identifiant créé sur l'appareil, suppression douce.
@@ -143,6 +179,12 @@ create trigger growth_keep_latest before update on public.growth
 drop trigger if exists firsts_keep_latest on public.firsts;
 create trigger firsts_keep_latest before update on public.firsts
   for each row execute function public.feeds_keep_latest();
+drop trigger if exists nursings_keep_latest on public.nursings;
+create trigger nursings_keep_latest before update on public.nursings
+  for each row execute function public.feeds_keep_latest();
+drop trigger if exists pumpings_keep_latest on public.pumpings;
+create trigger pumpings_keep_latest before update on public.pumpings
+  for each row execute function public.feeds_keep_latest();
 
 -- ---------- Fonction anti-récursion pour les règles RLS ---------------------
 
@@ -164,6 +206,8 @@ alter table public.feeds      enable row level security;
 alter table public.diapers    enable row level security;
 alter table public.growth     enable row level security;
 alter table public.firsts     enable row level security;
+alter table public.nursings   enable row level security;
+alter table public.pumpings   enable row level security;
 
 drop policy if exists b_select on public.babies;
 create policy b_select on public.babies for select
@@ -202,6 +246,16 @@ create policy g_all on public.growth for all
 
 drop policy if exists p_all on public.firsts;
 create policy p_all on public.firsts for all
+  using      (baby_id in (select public.user_baby_ids()))
+  with check (baby_id in (select public.user_baby_ids()));
+
+drop policy if exists n_all on public.nursings;
+create policy n_all on public.nursings for all
+  using      (baby_id in (select public.user_baby_ids()))
+  with check (baby_id in (select public.user_baby_ids()));
+
+drop policy if exists pu_all on public.pumpings;
+create policy pu_all on public.pumpings for all
   using      (baby_id in (select public.user_baby_ids()))
   with check (baby_id in (select public.user_baby_ids()));
 
@@ -288,7 +342,7 @@ grant execute on function public.join_baby(text, text, text)    to authenticated
 do $$
 declare t text;
 begin
-  foreach t in array array['feeds', 'babies', 'caregivers', 'diapers', 'growth', 'firsts'] loop
+  foreach t in array array['feeds', 'babies', 'caregivers', 'diapers', 'growth', 'firsts', 'nursings', 'pumpings'] loop
     if not exists (select 1 from pg_publication_tables
                    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t) then
       execute format('alter publication supabase_realtime add table public.%I', t);

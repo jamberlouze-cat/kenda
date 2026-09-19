@@ -1,6 +1,6 @@
 import { supabase } from "./lib/supabase.js";
 import { isConfigured, SUPABASE_URL } from "./lib/config.js";
-import { queue, snapshot, babyMemory, nameMemory, applyQueue } from "./lib/store.js";
+import { queue, snapshot, babyMemory, nameMemory, timerMemory, applyQueue } from "./lib/store.js";
 import { photos } from "./lib/photos.js";
 import {
   MEASURES, PERCENTILES, MAX_AGE_DAYS, parseDay, ageInDays, ageLabel, percentileOf, percentileLabel, percentileCurve,
@@ -26,11 +26,13 @@ const MODULES = {
   couches: { label: "Couches", icon: "diaper" },
   croissance: { label: "Croissance", icon: "ruler" },
   premieres: { label: "Premières de bébé", icon: "star" },
+  tirelait: { label: "Tire-lait", icon: "pump" },
 };
 // Colonnes chargées pour les listes : tout sauf la photo (lib/photos.js s'en occupe).
 const GROWTH_COLS = "id,baby_id,measured_on,weight_g,height_cm,head_cm,note,has_photo,caregiver_id,created_at,updated_at,deleted_at";
 const FIRSTS_COLS = "id,baby_id,happened_on,title,note,has_photo,caregiver_id,created_at,updated_at,deleted_at";
-const SYNCED = ["feeds", "diapers", "growth", "firsts"];     // tables à saisie hors ligne (file d'attente)
+const PUMP_COLS = "id,baby_id,started_at,duration_sec,amount_ml,left_ml,right_ml,note,has_photo,caregiver_id,created_at,updated_at,deleted_at";
+const SYNCED = ["feeds", "diapers", "growth", "firsts", "nursings", "pumpings"];     // tables à saisie hors ligne (file d'attente)
 
 // ------------------------------------------------------------------ state ---
 const state = {
@@ -39,7 +41,7 @@ const state = {
   user: null,
   older: {},            // par bébé : total des boires plus vieux que la fenêtre chargée
   babies: [], caregivers: [], feeds: [],   // feeds : tous mes bébés, file d'attente appliquée
-  diapers: [], growth: [], firsts: [],     // idem pour les autres modules
+  diapers: [], growth: [], firsts: [], nursings: [], pumpings: [],   // idem pour les autres modules
   page: null,           // sous-écran ouvert par-dessus l'onglet : diapers | growth | firsts | modules
   measure: "weight",    // croissance : courbe affichée (weight | height | head)
   growthSel: null,      // croissance : mesure pointée sur la courbe
@@ -122,6 +124,11 @@ const ICONS = {
   ruler: '<rect x="2.5" y="8" width="19" height="8" rx="1.5"/><path d="M6.5 8v3M10.2 8v4M13.8 8v3M17.5 8v4"/>',
   star: '<path d="M12 3.5l2.6 5.3 5.9.9-4.2 4.1 1 5.8L12 16.9l-5.3 2.7 1-5.8L3.5 9.7l5.9-.9z"/>',
   camera: '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
+  breast: '<path d="M6 8c-1.5 2.5-2 5-2 7a8 8 0 0 0 16 0c0-2-.5-4.5-2-7"/><path d="M6 8c2-2.5 4-4 6-4s4 1.5 6 4"/><circle cx="12" cy="15" r="1.8"/>',
+  pump: '<path d="M3 10a5 5 0 0 1 10 0v1H3z"/><path d="M8 11v3h6"/><rect x="14" y="9" width="7" height="12" rx="2"/><path d="M16.5 9V6.5h2V9"/>',
+  play: '<path d="M8 5.5v13l10-6.5z"/>',
+  pause: '<path d="M8 5v14M16 5v14"/>',
+  pencil: '<path d="M4 20l4.5-1L19 8.5l-3.5-3.5L5 15.5z"/><path d="M13.5 7l3.5 3.5"/>',
 };
 function icon(name) {
   return `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ""}</svg>`;
@@ -240,6 +247,17 @@ function renderMain() {
 /** Une ligne de boire : heure + type, puis une barre proportionnelle à la quantité. */
 function feedRow(f, max) {
   const who = caregiver(f.caregiver_id);
+  if (f._nursing) {
+    const unsentN = queue.all().some((q) => q.id === f.id);
+    return `
+    <button class="feed-row" data-action="edit-nursing" data-id="${f.id}">
+      <span class="feed-main">
+        <span class="feed-time">${fmtTime(f.started_at)} <span class="feed-kind">Allaitement</span>${who ? ` <span class="meta">· ${esc(who.name)}</span>` : ""}${unsentN ? ` <span class="unsent" title="Pas encore envoyé">${icon("cloudUp")}</span>` : ""}</span>
+        <span class="feed-bar-line"><span class="meta">${esc(nursingSummary(f))}${f.last_side ? ` · dernier : ${SIDE[f.last_side].toLowerCase()}` : ""}</span></span>
+      </span>
+      <span class="chev">${icon("right")}</span>
+    </button>`;
+  }
   const showKind = enabledKinds().length > 1 || f.kind !== enabledKinds()[0];
   const unsent = queue.all().some((q) => q.id === f.id);
   const width = Math.max(8, Math.round((Number(f.amount_ml) / (max || Number(f.amount_ml))) * 100));
@@ -253,11 +271,17 @@ function feedRow(f, max) {
       <span class="chev">${icon("right")}</span>
     </button>`;
 }
-const maxAmount = (list) => Math.max(1, ...list.map((f) => Number(f.amount_ml)));
+const maxAmount = (list) => Math.max(1, ...list.map((f) => Number(f.amount_ml) || 0));
 
+/** Boires et tétées mêlés, du plus récent au plus ancien (une tétée porte `_nursing`). */
+function feedEvents() {
+  const nursings = nursingOn() || babyNursings().length ? babyNursings().map((n) => ({ ...n, kind: "allaitement", amount_ml: 0, _nursing: true })) : [];
+  return sortDesc([...babyFeeds(), ...nursings]);
+}
 function homeFeeds() {
   const now = new Date(), feeds = babyFeeds(), baby = currentBaby();
-  const last = lastFeed(feeds, now);
+  const events = feedEvents().filter((f) => new Date(f.started_at) <= now);
+  const last = events[0] || null;
 
   let hero;
   if (!last) {
@@ -271,30 +295,32 @@ function homeFeeds() {
     hero = `<div class="hero">
       <span class="hero-icon">${icon("bottle")}</span>
       <div class="hero-text">
-        <p class="hero-title">Dernier boire</p>
+        <p class="hero-title">${last._nursing ? "Dernière tétée" : "Dernier boire"}</p>
         <p class="hero-elapsed ${late ? "late" : ""}">${elapsed < 60000 ? "à l'instant" : "il y a " + formatElapsed(elapsed)}</p>
         <p class="meta">${esc([`à ${fmtTime(last.started_at)}`, who ? `par ${who.name}` : ""].filter(Boolean).join(" · "))}</p>
       </div>
-      <p class="hero-amount">${formatAmount(last.amount_ml, unit())}<small>${unit()}</small></p>
+      ${last._nursing ? `<p class="hero-nursing"><span class="hero-icon small">${icon("breast")}</span>${esc(nursingSummary(last))}</p>`
+    : `<p class="hero-amount">${formatAmount(last.amount_ml, unit())}<small>${unit()}</small></p>`}
     </div>`;
   }
 
-  const recent = sortDesc(feeds).slice(0, 5), max = maxAmount(recent);
+  const recent = events.slice(0, 5), max = maxAmount(recent);
   const open = state.listOpen;
   return `
     <section class="feed-card">
       <div class="feed-band"><h2>Boires</h2>
         <button class="add-btn" data-action="add-feed" aria-label="Ajouter un boire">${icon("plus")}</button></div>
+      ${runningRow("nursing", "Allaitement", "choose-nursing")}
       ${hero}
       ${recent.length ? `
         <button class="fold" data-action="toggle-list"><span>${open ? "Afficher moins" : "Afficher les derniers boires"}</span>${icon(open ? "up2" : "down")}</button>
         ${open ? recent.map((f) => feedRow(f, max)).join("") : ""}
-        ${open && feeds.length > 5 ? `<button class="fold more" data-action="tab" data-tab="history"><span>Tout l'historique</span>${icon("right")}</button>` : ""}` : ""}
+        ${open && events.length > 5 ? `<button class="fold more" data-action="tab" data-tab="history"><span>Tout l'historique</span>${icon("right")}</button>` : ""}` : ""}
     </section>`;
 }
 
 function viewHome() {
-  const blocks = { biberon: homeFeeds, couches: homeDiapers, croissance: homeGrowth, premieres: homeFirsts };
+  const blocks = { biberon: homeFeeds, couches: homeDiapers, croissance: homeGrowth, premieres: homeFirsts, tirelait: homePump };
   const on = moduleList().filter((m) => m.on);
   const manage = `<button class="btn ghost block manage-btn" data-action="open-page" data-page="modules">${icon("grip")} Gérer les modules</button>`;
   if (!on.length) return `<div class="empty">Tous les modules sont masqués.</div>${manage}`;
@@ -395,9 +421,9 @@ function homeFirsts() {
 function viewPage() {
   const p = state.page;
   if (p === "modules") return pageModules();
-  const title = { diapers: "Couches", growth: "Croissance", firsts: "Premières de bébé" }[p];
-  const body = p === "diapers" ? pageDiapers() : p === "growth" ? pageGrowth() : pageFirsts();
-  const mod = { diapers: "couches", growth: "croissance", firsts: "premieres" }[p];
+  const title = { diapers: "Couches", growth: "Croissance", firsts: "Premières de bébé", pump: "Tire-lait" }[p];
+  const body = p === "diapers" ? pageDiapers() : p === "growth" ? pageGrowth() : p === "pump" ? pagePump() : pageFirsts();
+  const mod = { diapers: "couches", growth: "croissance", firsts: "premieres", pump: "tirelait" }[p];
   return `<div class="page-head ${mod}">
       <button class="back" data-action="close-page" aria-label="Retour">${icon("left")}</button>
       <h2>${title}</h2>
@@ -534,7 +560,7 @@ function pageGrowth() {
 
 // ------------------------------------------------------- gérer les modules ---
 function openModules() {
-  state.modulesDraft = { list: moduleList().map((m) => ({ ...m })), kinds: [...enabledKinds()] };
+  state.modulesDraft = { list: moduleList().map((m) => ({ ...m })), kinds: [...enabledKinds()], nursing: nursingOn() };
   state.page = "modules"; renderApp(); window.scrollTo(0, 0);
 }
 function pageModules() {
@@ -553,7 +579,10 @@ function pageModules() {
           <span class="mod-name">${MODULES[m.id].label}</span>
           <button class="switch-btn" data-action="draft-module" data-id="${m.id}" role="switch" aria-checked="${m.on}" aria-label="${MODULES[m.id].label}"><span class="switch ${m.on ? "on" : ""}"></span></button>
         </div>
-        ${m.id === "biberon" ? Object.entries(KINDS).map(([k, l]) => `
+        ${m.id === "biberon" ? `<div class="mod-line sub ${m.on ? "" : "off"}">
+          <span class="mod-name">Allaitement</span>
+          <button class="switch-btn" data-action="draft-nursing" role="switch" aria-checked="${d.nursing}" aria-label="Allaitement"><span class="switch ${d.nursing ? "on" : ""}"></span></button>
+        </div>` + Object.entries(KINDS).map(([k, l]) => `
         <div class="mod-line sub ${m.on ? "" : "off"}">
           <span class="mod-name">${l}</span>
           <button class="switch-btn" data-action="draft-kind" data-kind="${k}" role="switch" aria-checked="${d.kinds.includes(k)}" aria-label="${l}"><span class="switch ${d.kinds.includes(k) ? "on" : ""}"></span></button>
@@ -613,7 +642,7 @@ function saveModules() {
   if (d.list.find((m) => m.id === "biberon")?.on && !d.kinds.length) { toast("Garde au moins un type de lait actif"); return; }
   const kinds = d.kinds.length ? Object.keys(KINDS).filter((k) => d.kinds.includes(k)) : enabledKinds();
   state.page = null; state.modulesDraft = null;
-  updateBaby({ modules: d.list.map(({ id, on }) => ({ id, on })), kinds }, "Modules enregistrés");
+  updateBaby({ modules: d.list.map(({ id, on }) => ({ id, on })), kinds, nursing: d.nursing }, "Modules enregistrés");
 }
 
 // --------------------------------------------------------------- historique ---
@@ -698,8 +727,8 @@ function weekCalendarCard() {
     <div class="cal-day ${i === 6 ? "today" : ""}"><span>${esc(fr(d, { weekday: "short" }).replace(".", ""))}</span><b>${d.getDate()}</b></div>`).join("");
   const cols = days.map((d, i) => {
     const key = dayKey(d);
-    const marks = feeds.filter((f) => dayKey(f.started_at) === key).map((f) =>
-      `<span class="cal-mark ${f.kind}" style="top:${pct(minuteOf(f.started_at))}" title="${esc(`${fmtTime(f.started_at)}, ${amount(f.amount_ml)}`)}"></span>`).join("");
+    const marks = feedEvents().filter((f) => dayKey(f.started_at) === key).map((f) =>
+      `<span class="cal-mark ${f.kind}" style="top:${pct(minuteOf(f.started_at))}" title="${esc(`${fmtTime(f.started_at)}, ${f._nursing ? nursingSummary(f) : amount(f.amount_ml)}`)}"></span>`).join("");
     return `<div class="cal-col ${i === 6 ? "today" : ""}">${marks}${i === 6 ? `<span class="cal-now" style="top:${pct(minuteOf(now))}"></span>` : ""}</div>`;
   }).join("");
   const hours = [0, 3, 6, 9, 12, 15, 18, 21, 24];
@@ -715,7 +744,7 @@ function weekCalendarCard() {
           ${cols}
         </div>
       </div>
-      ${enabledKinds().length > 1 ? `<p class="cal-legend meta"><i class="maternel"></i> Maternel <i class="formule"></i> Formule</p>` : ""}
+      ${enabledKinds().length > 1 || babyNursings().length ? `<p class="cal-legend meta"><i class="maternel"></i> Maternel <i class="formule"></i> Formule${babyNursings().length ? `<i class="allaitement"></i> Allaitement` : ""}</p>` : ""}
     </section>`;
 }
 
@@ -734,7 +763,7 @@ function viewHistory() {
   const now = new Date();
   const days = state.range === "week" ? 7 : 14;
   const from = addDays(startOfDay(now), -(days - 1)).getTime();
-  const groups = groupByDay(babyFeeds().filter((f) => new Date(f.started_at).getTime() >= from));
+  const groups = groupByDay(feedEvents().filter((f) => new Date(f.started_at).getTime() >= from));
   const seg = (r, l) => `<button class="${state.range === r ? "on" : ""}" data-action="range" data-range="${r}">${l}</button>`;
   const list = groups.length ? groups.map((g) => `
       <div class="day-group">
@@ -928,7 +957,9 @@ function openSheet(sheet) {
 }
 function closeSheet() {
   const scrim = document.getElementById("scrim");
+  const timerSheet = state.sheet?.type === "nursing" || state.sheet?.type === "pump";
   state.sheet = null;
+  if (timerSheet) renderMain();          // l'accueil montre (ou cache) le minuteur en cours
   if (scrim) {
     if (scrim.contains(document.activeElement)) document.activeElement.blur();
     scrim.classList.remove("open");
@@ -942,6 +973,7 @@ function renderSheet() {
   if (!el || !state.sheet) return;
   const t = state.sheet.type;
   const body = t === "feed" ? sheetFeed() : t === "diaper" ? sheetDiaper() : t === "growth" ? sheetGrowth() : t === "first" ? sheetFirst()
+    : t === "nursing" ? sheetNursing() : t === "pump" ? sheetPump() : t === "feedChoice" ? sheetFeedChoice()
     : t === "babies" ? sheetBabies() : sheetNewBaby();
   const form = FORM_SHEETS.has(t);
   el.classList.toggle("form-sheet", form);
@@ -1009,7 +1041,7 @@ function wheelShow(date, smooth = false) {
 /** Lit la roulette (appelé quand le défilement s'arrête). Le futur est refusé : retour à maintenant. */
 function wheelRead() {
   const wheel = $("#wheel"), s = state.sheet;
-  if (!wheel || wheel.hidden || !(s?.type === "feed" || s?.type === "diaper")) return;
+  if (!wheel || wheel.hidden || !["feed", "diaper", "nursing", "pump"].includes(s?.type)) return;
   const span = Number(wheel.dataset.span), now = new Date();
   const d = addDays(startOfDay(now), -(span - 1 - wheelIndex(wheelCol("jour"))));
   d.setHours(wheelIndex(wheelCol("heure")), wheelIndex(wheelCol("minute")), 0, 0);
@@ -1146,7 +1178,7 @@ function commitFeed(feed) {
 // Même gabarit que la fiche « boire » : bandeau aux couleurs du module, une
 // ligne par champ. La photo (facultative) est réduite sur l'appareil ; dans la
 // fiche, `photo` vaut undefined (inchangée), null (retirée) ou l'image.
-const FORM_SHEETS = new Set(["feed", "diaper", "growth", "first"]);
+const FORM_SHEETS = new Set(["feed", "diaper", "growth", "first", "nursing", "pump"]);
 const sheetBand = (title) => `<div class="sheet-band">
       <button class="band-btn" data-action="close-sheet" aria-label="Fermer">${icon("x")}</button>
       <h2>${title}</h2>
@@ -1293,6 +1325,8 @@ function saveSheet() {
   if (t === "diaper") return saveDiaper();
   if (t === "growth") return saveGrowth();
   if (t === "first") return saveFirst();
+  if (t === "nursing") return saveNursing();
+  if (t === "pump") return savePump();
 }
 function deleteSheet() {
   const s = state.sheet;
@@ -1302,7 +1336,7 @@ function deleteSheet() {
     $('[data-action="delete-sheet"]').innerHTML = `${icon("trash")} Toucher encore pour supprimer`;
     return;
   }
-  const table = { diaper: "diapers", growth: "growth", first: "firsts" }[s.type];
+  const table = { diaper: "diapers", growth: "growth", first: "firsts", nursing: "nursings", pump: "pumpings" }[s.type];
   const existing = state[table].find((r) => r.id === s.id);
   if (existing) commitRow(table, { ...existing, deleted_at: new Date().toISOString() });
   closeSheet();
@@ -1354,7 +1388,7 @@ async function loadPhotos() {
   if (loadingPhotos) return;
   loadingPhotos = true;
   try {
-    for (const table of ["growth", "firsts"]) {
+    for (const table of ["growth", "firsts", "pumpings"]) {
       const want = state[table].filter((r) => r.has_photo && Date.parse(photos.version(r.id) || 0) !== Date.parse(r.updated_at)).map((r) => r.id);
       for (let i = 0; i < want.length; i += 8) {
         const { data, error } = await supabase.from(table).select("id,photo,updated_at").in("id", want.slice(i, i + 8));
@@ -1364,6 +1398,224 @@ async function loadPhotos() {
       }
     }
   } finally { loadingPhotos = false; }
+}
+
+// ------------------------------------------------- allaitement & tire-lait ---
+// Minuteurs persistants (lib/store.js timerMemory) : ils tournent même quand la
+// fiche est fermée ou le téléphone verrouillé, et l'accueil montre « en cours ».
+const nursingOn = () => currentBaby()?.nursing !== false;
+const babyNursings = () => ofBaby("nursings");
+const babyPumpings = () => ofBaby("pumpings");
+/** Secondes accumulées sur un côté, minuteur en marche compris. */
+const timerSeconds = (t, side) => (t?.sides?.[side] || 0) + (t?.running === side ? Math.max(0, Math.floor((Date.now() - t.since) / 1000)) : 0);
+const timerOf = (kind) => { const t = timerMemory.get(kind); return t && t.babyId === state.babyId ? t : null; };
+function timerToggle(kind, side) {
+  const t = timerOf(kind) || { babyId: state.babyId, startedAt: null, sides: {}, running: null, since: 0, lastSide: null };
+  if (t.running === side) { t.sides[side] = timerSeconds(t, side); t.running = null; }
+  else {
+    if (t.running) t.sides[t.running] = timerSeconds(t, t.running);
+    t.running = side; t.since = Date.now(); t.lastSide = side;
+    t.startedAt ||= new Date().toISOString();
+  }
+  timerMemory.set(kind, t);
+  return t;
+}
+/** « 12:05 » pour un minuteur qui tourne. */
+const fmtClock = (sec) => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
+/** « 12 min », « 1 h 05 », « 45 s » pour une durée gardée. */
+function fmtDur(sec) {
+  sec = Math.round(sec || 0);
+  if (sec < 60) return `${sec} s`;
+  const m = Math.round(sec / 60);
+  return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, "0")}`;
+}
+const SIDE = { left: "Gauche", right: "Droit" };
+const nursingSummary = (n) => [n.left_sec ? `G ${fmtDur(n.left_sec)}` : "", n.right_sec ? `D ${fmtDur(n.right_sec)}` : ""].filter(Boolean).join(" · ") || "0 min";
+
+/** Bandeau « en cours » sous le bandeau d'une carte, quand un minuteur tourne ou est en pause. */
+function runningRow(kind, label, action) {
+  const t = timerOf(kind); if (!t) return "";
+  const sides = kind === "nursing" ? ["left", "right"] : ["all"];
+  const parts = sides.map((s) => `${kind === "nursing" ? SIDE[s].charAt(0) + " " : ""}<b data-timer="${kind}:${s}">${fmtClock(timerSeconds(t, s))}</b>`).join(" · ");
+  return `<button class="running-row" data-action="${action}"><span class="dot ${t.running ? "live" : ""}"></span><span>${label}${t.running ? " en cours" : " en pause"}</span><span class="running-time">${parts}</span>${icon("right")}</button>`;
+}
+// L'horloge des minuteurs : une fois par seconde, seulement les chiffres.
+setInterval(() => {
+  for (const el of document.querySelectorAll("[data-timer]")) {
+    const [kind, side] = el.dataset.timer.split(":"), t = timerOf(kind);
+    if (t) el.textContent = fmtClock(timerSeconds(t, side));
+  }
+}, 1000);
+
+// ---- petit choix : allaitement ou biberon
+function sheetFeedChoice() {
+  return `<h2>Ajouter un boire</h2>
+    <div class="choice-list">
+      <button class="choice" data-action="choose-nursing"><span class="kind-dot maternel">${icon("breast")}</span><span>Allaitement</span></button>
+      <button class="choice" data-action="choose-bottle"><span class="kind-dot formule">${icon("bottle")}</span><span>Biberon</span></button>
+    </div>`;
+}
+
+// ---- fiche allaitement
+function openNursingSheet(row) {
+  const t = row ? null : timerOf("nursing");
+  openSheet({ type: "nursing", id: row?.id || null, time: row ? new Date(row.started_at) : null, manual: !!row,
+    left: row ? Math.round(row.left_sec / 60) : 0, right: row ? Math.round(row.right_sec / 60) : 0,
+    lastSide: row?.last_side || t?.lastSide || null, confirmDelete: false });
+}
+function sheetNursing() {
+  const s = state.sheet, now = new Date(), t = s.id ? null : timerOf("nursing");
+  const prev = sortBy(babyNursings(), "started_at").find((n) => n.id !== s.id);
+  const lastSide = s.id ? prev?.last_side : (t?.lastSide ? null : prev?.last_side);   // « dernier sein » de la tétée d'avant
+  const startAt = s.time || (t?.startedAt ? new Date(t.startedAt) : null);
+  const side = (k) => {
+    const running = t?.running === k, sec = t ? timerSeconds(t, k) : 0;
+    return `<div class="side ${running ? "live" : ""}">
+        <span class="last-side ${lastSide === k ? "" : "hidden"}">dernier sein</span>
+        ${s.manual ? `<span class="row-amount"><input type="text" id="n-${k}" inputmode="numeric" autocomplete="off" value="${s[k] || ""}" placeholder="0" aria-label="${SIDE[k]}, minutes"><small>min</small></span>`
+    : `<span class="timer" data-timer="nursing:${k}">${fmtClock(sec)}</span>`}
+        <span class="side-name">${SIDE[k]}</span>
+        ${s.manual ? "" : `<button class="btn-outline" data-action="nursing-toggle" data-side="${k}">${running ? `${icon("pause")} Pause` : sec ? `${icon("play")} Reprendre` : `${icon("play")} Démarrer`}</button>`}
+      </div>`;
+  };
+  return `${sheetBand(s.id ? "Modifier la tétée" : "Allaitement")}
+    <div class="sides">${side("left")}${side("right")}</div>
+    ${s.manual ? "" : `<button class="link center small" data-action="nursing-manual">${icon("pencil")} Entrer les minutes à la main</button>`}
+    <button class="form-row" id="feed-when-row" data-action="toggle-wheel" aria-label="Changer l'heure de début">
+      <span class="row-label">Heure de début</span>
+      <span class="row-value" id="feed-time-label">${esc(startAt ? timeLabel(startAt) : "Au démarrage")}</span>
+    </button>
+    ${wheelHtml(startAt || now, now)}
+    ${s.manual ? `<div class="form-row"><span class="row-label">Dernier sein</span>
+      <span class="pillrow tight">${["left", "right"].map((k) => `<button class="pill small maternel ${s.lastSide === k ? "on" : ""}" data-action="nursing-last" data-side="${k}">${SIDE[k]}</button>`).join("")}</span></div>` : ""}
+    ${s.id ? deleteFoot(s, "cette tétée") : t ? `<div class="sheet-foot"><button class="btn ghost danger" data-action="nursing-abandon">${icon("trash")} Abandonner cette tétée</button></div>` : ""}`;
+}
+function saveNursing() {
+  const s = state.sheet, t = s.id ? null : timerOf("nursing");
+  let left, right, lastSide = s.lastSide;
+  if (s.manual) { left = (numVal("n-left") || 0) * 60; right = (numVal("n-right") || 0) * 60; }
+  else { left = timerSeconds(t, "left"); right = timerSeconds(t, "right"); lastSide = t?.lastSide || null; }
+  if (!left && !right) { toast("Démarre un côté, ou entre les minutes"); return; }
+  if (!lastSide) lastSide = right ? "right" : "left";
+  const when = s.time || (t?.startedAt ? new Date(t.startedAt) : new Date());
+  if (when.getTime() > Date.now() + 2 * 60000) { toast("L'heure est dans le futur"); return; }
+  const existing = s.id ? state.nursings.find((n) => n.id === s.id) : null;
+  commitRow("nursings", { id: s.id || uuid(), baby_id: state.babyId, started_at: when.toISOString(), left_sec: Math.round(left), right_sec: Math.round(right),
+    last_side: lastSide, caregiver_id: existing ? existing.caregiver_id : me()?.id || null, deleted_at: null });
+  if (!s.id) timerMemory.clear("nursing");
+  closeSheet();
+  toast(s.id ? "Tétée modifiée" : "Tétée ajoutée", { kind: "ok" });
+}
+
+// ---- tire-lait
+function homePump() {
+  const now = new Date(), baby = currentBaby();
+  const last = sortBy(babyPumpings(), "started_at").find((p) => new Date(p.started_at) <= now);
+  const today = babyPumpings().filter((p) => dayKey(p.started_at) === dayKey(now)).reduce((a, p) => a + Number(p.amount_ml), 0);
+  let hero;
+  if (!last) {
+    hero = `<div class="hero"><span class="hero-icon">${icon("pump")}</span>
+      <div class="hero-text"><p class="hero-title">Aucune séance notée</p>
+      <p class="meta">Touche le « + » à la prochaine séance de tire-lait.</p></div></div>`;
+  } else {
+    const elapsed = now - new Date(last.started_at), who = caregiver(last.caregiver_id);
+    hero = `<button class="hero hero-btn" data-action="edit-tirelait" data-id="${last.id}">
+      <span class="hero-icon">${icon("pump")}</span>
+      <div class="hero-text">
+        <p class="hero-title">Dernière séance</p>
+        <p class="hero-elapsed">${elapsed < 60000 ? "à l'instant" : "il y a " + formatElapsed(elapsed)}</p>
+        <p class="meta">${esc([`à ${fmtTime(last.started_at)}`, last.duration_sec ? fmtDur(last.duration_sec) : "", who ? `par ${who.name}` : ""].filter(Boolean).join(" · "))}</p>
+      </div>
+      <p class="hero-amount">${formatAmount(last.amount_ml, unit())}<small>${unit()}</small></p>
+    </button>`;
+  }
+  const body = `${runningRow("pump", "Séance", "add-tirelait")}${hero}${today ? `<p class="meta today-line">Aujourd'hui : ${amount(today)}</p>` : ""}`;
+  return moduleCard("tirelait", "Tire-lait", "Ajouter une séance", body, last ? { page: "pump", label: "Voir l'historique" } : null);
+}
+function pagePump() {
+  const now = new Date(), rows = sortBy(babyPumpings(), "started_at");
+  if (!rows.length) return `<div class="empty">Aucune séance notée dans les ${HISTORY_DAYS} derniers jours.</div>`;
+  const groups = new Map();
+  for (const p of rows) { const k = dayKey(p.started_at); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(p); }
+  return [...groups.values()].map((list) => `<div class="day-group">
+      <div class="day-head"><h3>${esc(capitalize(dayLabel(list[0].started_at, now)))}</h3>
+        <span class="day-total">${amount(list.reduce((a, p) => a + Number(p.amount_ml), 0))} <small>· ${plural(list.length, "séance")}</small></span></div>
+      <div class="card list">${list.map((p) => {
+    const who = caregiver(p.caregiver_id), unsent = queue.all().some((q) => q.id === p.id), photo = p.has_photo ? photos.get(p.id) : null;
+    const sides = p.left_ml != null || p.right_ml != null ? `G ${formatAmount(p.left_ml || 0, unit())} · D ${formatAmount(p.right_ml || 0, unit())}` : "";
+    return `<button class="feed-row" data-action="edit-tirelait" data-id="${p.id}">
+        ${photo ? `<span class="hero-icon photo small"><img src="${esc(photo)}" alt=""></span>` : ""}
+        <span class="feed-main"><span class="feed-time">${fmtTime(p.started_at)}${who ? ` <span class="meta">· ${esc(who.name)}</span>` : ""}${unsent ? ` <span class="unsent">${icon("cloudUp")}</span>` : ""}</span>
+          <span class="meta">${esc([p.duration_sec ? fmtDur(p.duration_sec) : "", sides].filter(Boolean).join(" · "))}${p.note ? ` · ${esc(p.note)}` : ""}</span></span>
+        <span class="feed-amount">${formatAmount(p.amount_ml, unit())}<small> ${unit()}</small></span>
+        <span class="chev">${icon("right")}</span></button>`;
+  }).join("")}</div></div>`).join("");
+}
+function openPumpSheet(row) {
+  const u = unit(), f = (ml) => (ml == null ? "" : formatAmount(ml, u));
+  openSheet({ type: "pump", id: row?.id || null, mode: row ? (row.left_ml != null || row.right_ml != null ? "sides" : "total") : "sides",
+    time: row ? new Date(row.started_at) : null, manual: !!row, minutes: row ? Math.round(row.duration_sec / 60) : 0,
+    left: f(row?.left_ml), right: f(row?.right_ml), total: row ? f(row.amount_ml) : "", note: row?.note || "",
+    hasPhoto: !!row?.has_photo, photo: undefined, confirmDelete: false });
+}
+function sheetPump() {
+  const s = state.sheet, u = unit(), now = new Date(), t = s.id ? null : timerOf("pump");
+  const startAt = s.time || (t?.startedAt ? new Date(t.startedAt) : null);
+  const running = t?.running === "all", sec = t ? timerSeconds(t, "all") : 0;
+  const num = (id, value, label) => `<span class="row-amount"><input type="text" id="${id}" inputmode="${u === "oz" ? "decimal" : "numeric"}" autocomplete="off" placeholder="Ajouter" value="${esc(value)}" data-input="pump-amount" aria-label="${label}"><small>${u}</small></span>`;
+  return `${sheetBand(s.id ? "Modifier la séance" : "Tire-lait")}
+    <div class="segmented rose in-sheet">
+      <button class="${s.mode === "sides" ? "on" : ""}" data-action="pump-mode" data-mode="sides">Gauche / Droite</button>
+      <button class="${s.mode === "total" ? "on" : ""}" data-action="pump-mode" data-mode="total">Total</button>
+    </div>
+    <div class="sides one">
+      ${s.manual ? `<div class="side"><span class="row-amount"><input type="text" id="p-minutes" inputmode="numeric" autocomplete="off" value="${s.minutes || ""}" placeholder="0" aria-label="Durée, minutes"><small>min</small></span><span class="side-name">Durée</span></div>`
+    : `<div class="side ${running ? "live" : ""}"><span class="timer" data-timer="pump:all">${fmtClock(sec)}</span>
+        <button class="btn-outline" data-action="pump-toggle">${running ? `${icon("pause")} Pause` : sec ? `${icon("play")} Reprendre` : `${icon("play")} Démarrer`}</button></div>
+      <button class="link center small" data-action="pump-manual">${icon("pencil")} Entrer la durée à la main</button>`}
+    </div>
+    <button class="form-row" id="feed-when-row" data-action="toggle-wheel" aria-label="Changer l'heure de début">
+      <span class="row-label">Heure de début</span>
+      <span class="row-value" id="feed-time-label">${esc(startAt ? timeLabel(startAt) : "Au démarrage")}</span>
+    </button>
+    ${wheelHtml(startAt || now, now)}
+    ${s.mode === "sides" ? `<label class="form-row"><span class="row-label">Quantité gauche</span>${num("p-left", s.left, "gauche")}</label>
+    <label class="form-row"><span class="row-label">Quantité droite</span>${num("p-right", s.right, "droite")}</label>
+    <div class="form-row total-row"><span class="row-label">Total</span><span class="row-value" id="pump-total">${pumpTotalLabel()}</span></div>`
+    : `<label class="form-row"><span class="row-label">Quantité totale</span>${num("p-total", s.total, "total")}</label>`}
+    ${noteRow(s.note)}
+    ${photoRow(s)}
+    ${s.id ? deleteFoot(s, "cette séance") : t ? `<div class="sheet-foot"><button class="btn ghost danger" data-action="pump-abandon">${icon("trash")} Abandonner cette séance</button></div>` : ""}`;
+}
+function pumpTotalLabel() {
+  const s = state.sheet, v = (x) => parseFloat(String(x || "").replace(",", ".")) || 0;
+  const l = $("#p-left") ? v($("#p-left").value) : v(s.left), r = $("#p-right") ? v($("#p-right").value) : v(s.right);
+  return `${(Math.round((l + r) * 10) / 10).toString().replace(".", ",")} ${unit()}`;
+}
+function savePump() {
+  const s = state.sheet, u = unit(), t = s.id ? null : timerOf("pump");
+  const duration = s.manual ? (numVal("p-minutes") || 0) * 60 : t ? timerSeconds(t, "all") : 0;
+  let left_ml = null, right_ml = null, amount_ml;
+  if (s.mode === "sides") {
+    const l = numVal("p-left"), r = numVal("p-right");
+    if (l == null && r == null) { toast("Entre une quantité"); return; }
+    left_ml = fromUnit(l || 0, u); right_ml = fromUnit(r || 0, u); amount_ml = Math.round((left_ml + right_ml) * 10) / 10;
+  } else {
+    const tot = numVal("p-total");
+    if (tot == null) { toast("Entre une quantité"); return; }
+    amount_ml = fromUnit(tot, u);
+  }
+  if (amount_ml > 2000 || left_ml > 1000 || right_ml > 1000) { toast("Quantité trop grande"); return; }
+  const when = s.time || (t?.startedAt ? new Date(t.startedAt) : new Date());
+  if (when.getTime() > Date.now() + 2 * 60000) { toast("L'heure est dans le futur"); return; }
+  const existing = s.id ? state.pumpings.find((p) => p.id === s.id) : null;
+  const row = { id: s.id || uuid(), baby_id: state.babyId, started_at: when.toISOString(), duration_sec: Math.round(duration), amount_ml, left_ml, right_ml,
+    note: $("#sheet-note")?.value.trim() || null, caregiver_id: existing ? existing.caregiver_id : me()?.id || null, deleted_at: null };
+  if (s.photo !== undefined) row.photo = s.photo;
+  commitRow("pumpings", row);
+  if (!s.id) timerMemory.clear("pump");
+  closeSheet();
+  toast(s.id ? "Séance modifiée" : `Séance ajoutée · ${amount(amount_ml)}`, { kind: "ok" });
 }
 
 // ------------------------------------------------------------ choix du bébé ---
@@ -1396,7 +1648,7 @@ function saveSnapshot() {
   snapshot.save({
     userId: state.user.id, email: state.user.email, babies: state.babies, caregivers: state.caregivers,
     feeds: state.feeds, diapers: state.diapers, growth: state.growth, firsts: state.firsts,
-    older: state.older, syncedAt: state.syncedAt,
+    nursings: state.nursings, pumpings: state.pumpings, older: state.older, syncedAt: state.syncedAt,
   });
 }
 
@@ -1409,6 +1661,8 @@ function showSnapshot() {
   state.diapers = applyQueue(snap.diapers || [], "diapers");
   state.growth = stripPhotos(applyQueue(snap.growth || [], "growth"));
   state.firsts = stripPhotos(applyQueue(snap.firsts || [], "firsts"));
+  state.nursings = applyQueue(snap.nursings || [], "nursings");
+  state.pumpings = stripPhotos(applyQueue(snap.pumpings || [], "pumpings"));
   state.older = snap.older || {};
   state.syncedAt = snap.syncedAt || null;
   if (!state.user.email && snap.email) state.user = { ...state.user, email: snap.email };
@@ -1480,7 +1734,7 @@ function loadAll(preferBabyId = null) {
   loading ||= (async () => {
     try {
       const since = new Date(Date.now() - HISTORY_DAYS * DAY).toISOString();
-      const [b, c, feeds, older, diapers, growth, firsts] = await Promise.all([
+      const [b, c, feeds, older, diapers, growth, firsts, nursings, pumpings] = await Promise.all([
         supabase.from("babies").select("*").order("created_at"),
         supabase.from("caregivers").select("*").order("created_at"),
         fetchFeeds(since),
@@ -1488,6 +1742,8 @@ function loadAll(preferBabyId = null) {
         fetchFeeds(since, "diapers", "changed_at"),
         fetchFeeds("1900-01-01", "growth", "measured_on", GROWTH_COLS),
         fetchFeeds("1900-01-01", "firsts", "happened_on", FIRSTS_COLS),
+        fetchFeeds(since, "nursings"),
+        fetchFeeds(since, "pumpings", "started_at", PUMP_COLS),
       ]);
       if (b.error) throw b.error;
       if (c.error) throw c.error;
@@ -1503,6 +1759,8 @@ function loadAll(preferBabyId = null) {
       state.diapers = applyQueue(diapers, "diapers");
       state.growth = stripPhotos(applyQueue(growth, "growth"));
       state.firsts = stripPhotos(applyQueue(firsts, "firsts"));
+      state.nursings = applyQueue(nursings, "nursings");
+      state.pumpings = stripPhotos(applyQueue(pumpings, "pumpings"));
       if (older) state.older = older;
       state.syncedAt = Date.now();
       state.offlineData = false; state.online = true;
@@ -1569,6 +1827,8 @@ function subscribeRealtime() {
     .on("postgres_changes", { event: "*", schema: "public", table: "diapers" }, (p) => onRowChange("diapers", p))
     .on("postgres_changes", { event: "*", schema: "public", table: "growth" }, scheduleReload)   // la photo n'est pas dans l'événement
     .on("postgres_changes", { event: "*", schema: "public", table: "firsts" }, scheduleReload)
+    .on("postgres_changes", { event: "*", schema: "public", table: "nursings" }, (p) => onRowChange("nursings", p))
+    .on("postgres_changes", { event: "*", schema: "public", table: "pumpings" }, scheduleReload)
     .on("postgres_changes", { event: "*", schema: "public", table: "babies" }, scheduleReload)
     .on("postgres_changes", { event: "*", schema: "public", table: "caregivers" }, scheduleReload)
     .subscribe((status) => {
@@ -1767,7 +2027,8 @@ async function signOut() {
 
 function resetToSignedOut() {
   snapshot.clear(); queue.clear(); photos.clear();
-  Object.assign(state, { user: null, babies: [], caregivers: [], feeds: [], diapers: [], growth: [], firsts: [], older: {}, babyId: null, pending: 0, offlineData: false, syncedAt: null, tab: "home", page: null, modulesDraft: null });
+  timerMemory.clear("nursing"); timerMemory.clear("pump");
+  Object.assign(state, { user: null, babies: [], caregivers: [], feeds: [], diapers: [], growth: [], firsts: [], nursings: [], pumpings: [], older: {}, babyId: null, pending: 0, offlineData: false, syncedAt: null, tab: "home", page: null, modulesDraft: null });
   if (state.sheet) closeSheet();
   render("auth");
 }
@@ -1832,7 +2093,21 @@ document.addEventListener("click", async (e) => {
     case "retry": render("loading"); return boot();
 
     // boires
-    case "add-feed": return openFeedSheet(null);
+    case "add-feed": return nursingOn() ? openSheet({ type: "feedChoice" }) : openFeedSheet(null);
+    case "choose-bottle": closeSheet(); return openFeedSheet(null);
+    case "choose-nursing": closeSheet(); return openNursingSheet(null);
+    case "edit-nursing": { const n = state.nursings.find((x) => x.id === btn.dataset.id); if (n) openNursingSheet(n); return; }
+    case "nursing-toggle": timerToggle("nursing", btn.dataset.side); return renderSheet();
+    case "nursing-manual": { const t = timerOf("nursing"); state.sheet.manual = true; state.sheet.left = Math.round(timerSeconds(t, "left") / 60); state.sheet.right = Math.round(timerSeconds(t, "right") / 60); state.sheet.lastSide = t?.lastSide || state.sheet.lastSide; return renderSheet(); }
+    case "nursing-last": state.sheet.lastSide = btn.dataset.side; return renderSheetKeep();
+    case "nursing-abandon": timerMemory.clear("nursing"); closeSheet(); renderMain(); return toast("Tétée abandonnée");
+    case "add-tirelait": return openPumpSheet(null);
+    case "edit-tirelait": { const p = state.pumpings.find((x) => x.id === btn.dataset.id); if (p) openPumpSheet(p); return; }
+    case "pump-toggle": timerToggle("pump", "all"); return renderSheetKeep();
+    case "pump-manual": state.sheet.manual = true; state.sheet.minutes = Math.round(timerSeconds(timerOf("pump"), "all") / 60); return renderSheetKeep();
+    case "pump-mode": state.sheet.mode = btn.dataset.mode; return renderSheetKeep();
+    case "pump-abandon": timerMemory.clear("pump"); closeSheet(); renderMain(); return toast("Séance abandonnée");
+    case "draft-nursing": state.modulesDraft.nursing = !state.modulesDraft.nursing; return renderMain();
     case "edit-feed": { const f = state.feeds.find((x) => x.id === btn.dataset.id); if (f) openFeedSheet(f); return; }
     case "feed-kind":
       state.sheet.kind = btn.dataset.kind;      // sans redessiner : la quantité en cours de saisie reste
@@ -1889,6 +2164,8 @@ function renderSheetKeep() {
   for (const el of document.querySelectorAll("#sheet input:not([type=file]), #sheet textarea")) keep[el.id] = el.value;
   if (s.type === "growth") { s.weight = keep["g-weight"] ?? s.weight; s.weightOz = keep["g-weight-oz"] ?? s.weightOz; s.height = keep["g-height"] ?? s.height; s.head = keep["g-head"] ?? s.head; }
   if (s.type === "first") s.title = keep["sheet-title"] ?? s.title;
+  if (s.type === "pump") { s.left = keep["p-left"] ?? s.left; s.right = keep["p-right"] ?? s.right; s.total = keep["p-total"] ?? s.total; if ("p-minutes" in keep) s.minutes = keep["p-minutes"]; }
+  if (s.type === "nursing") { if ("n-left" in keep) s.left = keep["n-left"]; if ("n-right" in keep) s.right = keep["n-right"]; }
   if ("sheet-note" in keep) s.note = keep["sheet-note"];
   if ("sheet-date" in keep) s.date = keep["sheet-date"];
   renderSheet();
@@ -1928,6 +2205,7 @@ document.addEventListener("focusin", (e) => {
 });
 
 document.addEventListener("input", (e) => {
+  if (e.target?.dataset?.input === "pump-amount") { const t = $("#pump-total"); if (t) t.textContent = pumpTotalLabel(); return; }
   if (e.target?.dataset?.input !== "feed-amount") return;
   const v = cleanAmount(e.target.value);
   if (v !== e.target.value) e.target.value = v;

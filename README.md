@@ -128,7 +128,15 @@ Ouvre l'adresse dans **Safari** → **Partager** → **Sur l'écran d'accueil**.
   naissance du bébé (Paramètres).
 - **Premières** : date, titre libre (un émoji au début devient l'icône), note,
   photo ; l'âge du bébé est affiché si la date de naissance est connue.
-- **Photos** des mesures et des premières : réduites à 640 px sur l'appareil,
+- **Allaitement** (sous-option de Biberon dans « Gérer les modules ») : le « + »
+  de Boires propose Allaitement ou Biberon. Fiche à deux minuteurs Gauche /
+  Droit (pause, reprise ; démarrer l'un met l'autre en pause), pastille
+  « dernier sein », heure de début. Le minuteur survit à la fermeture de la
+  fiche et de l'app (`kenda.timers.v1`) ; l'accueil montre « en cours ». Les
+  tétées se mêlent aux boires (accueil, journal, calendrier), sans quantité.
+- **Tire-lait** (module, rose) : Gauche/Droite ou Total, minuteur, heure de
+  début, quantités, note, photo. Historique par jour avec total.
+- **Photos** des mesures, des premières et des séances de tire-lait : réduites à 640 px sur l'appareil,
   gardées dans la base, mais pas dans l'instantané localStorage (trop petit) :
   copie dans IndexedDB (`lib/photos.js`), chargée à part de la liste.
 

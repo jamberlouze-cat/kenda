@@ -23,7 +23,7 @@
   function iso(ms) { return new Date(ms).toISOString(); }
 
   function seed(mode) {
-    const d = { users: [], babies: [], caregivers: [], feeds: [], diapers: [], growth: [], firsts: [] };
+    const d = { users: [], babies: [], caregivers: [], feeds: [], diapers: [], growth: [], firsts: [], nursings: [], pumpings: [] };
     const u = { id: uuid(), email: "maxime@test.local", password: "secret1" };
     const u2 = { id: uuid(), email: "julie@test.local", password: "secret1" };
     d.users.push(u, u2);
@@ -35,7 +35,7 @@
     let s = 11; const rnd = () => { s = (s * 9301 + 49297) % 233280; return s / 233280; };
     function baby(name, code, hours, base, kinds) {
       const b = { id: uuid(), name, join_code: code, unit: "ml", kinds: ["maternel", "formule"], remind_after_min: 210, created_at: iso(now - 20 * DAY),
-        sex: name === "Milo" ? "m" : "f", birth_date: new Date(now - 130 * DAY).toISOString().slice(0, 10), weight_unit: "kg", length_unit: "cm", modules: null };
+        sex: name === "Milo" ? "m" : "f", birth_date: new Date(now - 130 * DAY).toISOString().slice(0, 10), weight_unit: "kg", length_unit: "cm", modules: null, nursing: true };
       d.babies.push(b);
       const max = { id: uuid(), baby_id: b.id, user_id: u.id, name: "Maxime", color: "#6B5A85", created_at: iso(now - 20 * DAY) };
       const jul = { id: uuid(), baby_id: b.id, user_id: u2.id, name: "Julie", color: "#3E6B7A", created_at: iso(now - 19 * DAY) };
@@ -63,6 +63,22 @@
           const dirty = rnd() < 0.4;
           d.diapers.push({ id: uuid(), baby_id: b.id, wet: dirty ? rnd() < 0.6 : true, dirty, rash: rnd() < 0.08, changed_at: iso(at),
             caregiver_id: (rnd() > 0.5 ? jul : max).id, created_at: iso(at), updated_at: iso(at), deleted_at: null });
+        }
+      }
+      // Tétées (2 par jour, la nuit et l'après-midi) et séances de tire-lait (1 par jour).
+      for (let day = 16; day >= 0; day--) {
+        const midnight = new Date(now - day * DAY); midnight.setHours(0, 0, 0, 0);
+        [[3.5, "left"], [14, "right"]].forEach(([h, side], i) => {
+          const at = midnight.getTime() + h * 3600000 + Math.round(rnd() * 40) * 60000;
+          if (at > now - 30 * 60000) return;
+          d.nursings.push({ id: uuid(), baby_id: b.id, started_at: iso(at), left_sec: (8 + Math.round(rnd() * 8)) * 60, right_sec: (5 + Math.round(rnd() * 8)) * 60,
+            last_side: side, caregiver_id: jul.id, created_at: iso(at), updated_at: iso(at), deleted_at: null });
+        });
+        const at = midnight.getTime() + 10 * 3600000 + Math.round(rnd() * 60) * 60000;
+        if (at < now - 30 * 60000) {
+          const l = 40 + Math.round(rnd() * 40), r = 35 + Math.round(rnd() * 40);
+          d.pumpings.push({ id: uuid(), baby_id: b.id, started_at: iso(at), duration_sec: (12 + Math.round(rnd() * 10)) * 60, amount_ml: l + r, left_ml: l, right_ml: r,
+            note: null, photo: null, caregiver_id: jul.id, created_at: iso(at), updated_at: iso(at), deleted_at: null });
         }
       }
       // Croissance : naissance puis toutes les ~3 semaines (à peu près sur le 50e percentile).
@@ -135,7 +151,7 @@
         const p = this.payload;
         if (!myBabyIds().includes(p.baby_id)) return { data: null, error: { message: "new row violates row-level security policy", code: "42501" } };
         if (this.table === "feeds" && !(p.amount_ml > 0 && p.amount_ml <= 1000)) return { data: null, error: { message: "check constraint", code: "23514" } };
-        if (["diapers", "growth", "firsts"].includes(this.table) && !("baby_id" in p)) return { data: null, error: { message: "null value", code: "23502" } };
+        if (["diapers", "growth", "firsts", "nursings", "pumpings"].includes(this.table) && !("baby_id" in p)) return { data: null, error: { message: "null value", code: "23502" } };
         let row = rows.find((r) => this.conflict.every((k) => r[k] === p[k]));
         if (row) {
           // Le déclencheur feeds_keep_latest : une version plus vieille est ignorée.
