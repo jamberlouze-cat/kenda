@@ -296,7 +296,7 @@ function homeFeeds() {
     const late = baby.remind_after_min && elapsed >= baby.remind_after_min * 60000;
     const who = caregiver(last.caregiver_id);
     hero = `<div class="hero">
-      <span class="hero-icon">${icon(last._nursing ? "breast" : "bottle")}</span>
+      <span class="hero-icon ${last._nursing ? "" : last.kind}">${icon(last._nursing ? "breast" : "bottle")}</span>
       <div class="hero-text">
         <p class="hero-title">${last._nursing ? "Dernière tétée" : "Dernier boire"}</p>
         <p class="hero-elapsed ${late ? "late" : ""}">${elapsed < 60000 ? "à l'instant" : "il y a " + formatElapsed(elapsed)}</p>

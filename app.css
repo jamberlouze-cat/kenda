@@ -494,6 +494,7 @@ textarea.row-input { line-height: 1.35; }
 .today-line { padding: 0 20px 16px; margin-top: -10px; }
 .hero-nursing { font: 700 17px var(--font-num); color: var(--lilac-dark); white-space: nowrap; text-align: right; line-height: 1.3; }
 .hero-icon .ic-breast, .hero-icon .ic-drop { transform: none; }
+.hero-icon.formule { background: var(--blue-soft); color: var(--blue-dark); }
 .mod-card .hero-amount, .mod-card .hero-amount small { color: var(--mod-dark); }
 .cal-mark.allaitement, .cal-legend i.allaitement { background: var(--lilac-dark); }
 /* choix allaitement / biberon */
