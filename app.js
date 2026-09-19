@@ -2105,13 +2105,14 @@ document.addEventListener("click", async (e) => {
     case "choose-nursing": closeSheet(); return openNursingSheet(null);
     case "edit-nursing": { const n = state.nursings.find((x) => x.id === btn.dataset.id); if (n) openNursingSheet(n); return; }
     case "nursing-toggle": timerToggle("nursing", btn.dataset.side); return renderSheet();
-    case "nursing-manual": { const t = timerOf("nursing"); state.sheet.manual = true; state.sheet.left = Math.round(timerSeconds(t, "left") / 60); state.sheet.right = Math.round(timerSeconds(t, "right") / 60); state.sheet.lastSide = t?.lastSide || state.sheet.lastSide; return renderSheet(); }
+    // Passage à la saisie manuelle : on repart des minuteurs tels qu'ils sont (un minuteur parti compte au moins 1 min).
+    case "nursing-manual": { const t = timerOf("nursing"); state.sheet.manual = true; state.sheet.left = Math.ceil(timerSeconds(t, "left") / 60); state.sheet.right = Math.ceil(timerSeconds(t, "right") / 60); state.sheet.lastSide = t?.lastSide || state.sheet.lastSide; return renderSheet(); }
     case "nursing-last": state.sheet.lastSide = btn.dataset.side; return renderSheetKeep();
     case "nursing-abandon": timerMemory.clear("nursing"); closeSheet(); renderMain(); return toast("Tétée abandonnée");
     case "add-tirelait": return openPumpSheet(null);
     case "edit-tirelait": { const p = state.pumpings.find((x) => x.id === btn.dataset.id); if (p) openPumpSheet(p); return; }
     case "pump-toggle": timerToggle("pump", "all"); return renderSheetKeep();
-    case "pump-manual": state.sheet.manual = true; state.sheet.minutes = Math.round(timerSeconds(timerOf("pump"), "all") / 60); return renderSheetKeep();
+    case "pump-manual": state.sheet.manual = true; state.sheet.minutes = Math.ceil(timerSeconds(timerOf("pump"), "all") / 60); return renderSheetKeep();
     case "pump-mode": state.sheet.mode = btn.dataset.mode; return renderSheetKeep();
     case "pump-abandon": timerMemory.clear("pump"); closeSheet(); renderMain(); return toast("Séance abandonnée");
     case "draft-nursing": state.modulesDraft.nursing = !state.modulesDraft.nursing; return renderMain();

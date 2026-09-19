@@ -527,6 +527,7 @@ textarea.row-input { line-height: 1.35; }
 .side .btn-outline .ic { width: 16px; height: 16px; }
 .side .row-amount input { width: 72px; text-align: center; }
 .link.small { font-size: 13px; padding: 2px 0 6px; display: inline-flex; align-items: center; gap: 5px; }
+.link.small.center { display: flex; justify-content: center; width: 100%; }
 .link.small .ic { width: 15px; height: 15px; }
 .mod-pump .timer { color: var(--rose-dark); }
 .mod-pump .side .btn-outline { border-color: var(--rose-dark); color: var(--rose-dark); }
