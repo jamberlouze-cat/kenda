@@ -131,7 +131,7 @@ const ICONS = {
   pencil: '<path d="M4 20l4.5-1L19 8.5l-3.5-3.5L5 15.5z"/><path d="M13.5 7l3.5 3.5"/>',
 };
 function icon(name) {
-  return `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ""}</svg>`;
+  return `<svg class="ic ic-${name}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ""}</svg>`;
 }
 
 // ---------------------------------------------------------------- sélecteurs ---
@@ -293,13 +293,13 @@ function homeFeeds() {
     const late = baby.remind_after_min && elapsed >= baby.remind_after_min * 60000;
     const who = caregiver(last.caregiver_id);
     hero = `<div class="hero">
-      <span class="hero-icon">${icon("bottle")}</span>
+      <span class="hero-icon">${icon(last._nursing ? "breast" : "bottle")}</span>
       <div class="hero-text">
         <p class="hero-title">${last._nursing ? "Dernière tétée" : "Dernier boire"}</p>
         <p class="hero-elapsed ${late ? "late" : ""}">${elapsed < 60000 ? "à l'instant" : "il y a " + formatElapsed(elapsed)}</p>
         <p class="meta">${esc([`à ${fmtTime(last.started_at)}`, who ? `par ${who.name}` : ""].filter(Boolean).join(" · "))}</p>
       </div>
-      ${last._nursing ? `<p class="hero-nursing"><span class="hero-icon small">${icon("breast")}</span>${esc(nursingSummary(last))}</p>`
+      ${last._nursing ? `<p class="hero-nursing">${esc(nursingSummary(last)).replace(" · ", "<br>")}</p>`
     : `<p class="hero-amount">${formatAmount(last.amount_ml, unit())}<small>${unit()}</small></p>`}
     </div>`;
   }

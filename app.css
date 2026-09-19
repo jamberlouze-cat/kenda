@@ -491,9 +491,9 @@ textarea.row-input { line-height: 1.35; }
 .mod-item.tirelait { border-left-color: var(--rose); }
 .mod-item.tirelait .mod-dot { color: var(--rose-dark); }
 .today-line { padding: 0 20px 16px; margin-top: -10px; }
-.hero-nursing { display: flex; align-items: center; gap: 6px; font: 700 16px var(--font-num); color: var(--lilac-dark); white-space: nowrap; }
-.hero-icon.small { width: 32px; height: 32px; }
-.hero-icon.small .ic { width: 20px; height: 20px; transform: none; }
+.hero-nursing { font: 700 17px var(--font-num); color: var(--lilac-dark); white-space: nowrap; text-align: right; line-height: 1.3; }
+.hero-icon .ic-breast { transform: none; }
+.mod-card .hero-amount, .mod-card .hero-amount small { color: var(--mod-dark); }
 .cal-mark.allaitement, .cal-legend i.allaitement { background: var(--lilac-dark); }
 /* choix allaitement / biberon */
 .choice-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
