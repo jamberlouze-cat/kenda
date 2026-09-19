@@ -464,3 +464,4 @@ textarea.row-input { line-height: 1.35; }
 .sheet-note { padding: 12px 20px 0; }
 .page-head.modules h2 { position: static; transform: none; font-size: 20px; }
 .first-row .hero-icon { background: var(--sky-soft); color: var(--sky-dark); }
+.manage-btn { margin-top: 4px; color: var(--muted); }

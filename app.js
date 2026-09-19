@@ -297,8 +297,9 @@ function homeFeeds() {
 function viewHome() {
   const blocks = { biberon: homeFeeds, couches: homeDiapers, croissance: homeGrowth, premieres: homeFirsts };
   const on = moduleList().filter((m) => m.on);
-  if (!on.length) return `<div class="empty">Tous les modules sont masqués.<br><button class="link" data-action="open-page" data-page="modules">Gérer les modules</button></div>`;
-  return on.map((m) => blocks[m.id]()).join("");
+  const manage = `<button class="btn ghost block manage-btn" data-action="open-page" data-page="modules">${icon("grip")} Gérer les modules</button>`;
+  if (!on.length) return `<div class="empty">Tous les modules sont masqués.</div>${manage}`;
+  return on.map((m) => blocks[m.id]()).join("") + manage;
 }
 
 // ------------------------------------------------------ accueil : couches ---
