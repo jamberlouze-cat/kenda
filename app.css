@@ -54,6 +54,7 @@ p { margin: 0; }
 .center { text-align: center; }
 .link { color: var(--blue-dark); font-size: 14px; text-decoration: underline; text-underline-offset: 3px; padding: 6px 0; }
 .link.center { display: block; margin: 0 auto; }
+#auth-form .link.center { margin-top: 14px; }
 
 /* ---------- squelette ---------- */
 .screen { max-width: 560px; margin: 0 auto; padding: calc(10px + var(--safe-t)) 18px calc(var(--nav-h) + var(--safe-b) + 28px); }

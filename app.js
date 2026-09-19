@@ -847,9 +847,8 @@ function viewConfig() {
 
 function viewAuth() {
   return `<div class="center-screen">${brand}
-    <p>Le suivi des boires de bébé, partagé entre parents.</p>
     <form id="auth-form" class="stack">
-      <div class="field"><label for="auth-email">Ton courriel</label>
+      <div class="field"><label for="auth-email">Courriel</label>
         <input type="email" id="auth-email" name="email" inputmode="email" autocomplete="username" placeholder="nom@exemple.com" required></div>
       <div class="field"><label for="auth-pass">Mot de passe</label>
         <input type="password" id="auth-pass" name="password" autocomplete="current-password" placeholder="••••••••" minlength="6" required></div>
@@ -858,7 +857,7 @@ function viewAuth() {
       <button type="submit" id="auth-submit" class="btn primary block">Continuer</button>
       <button type="button" id="auth-forgot" class="link center" data-action="forgot">Mot de passe oublié ?</button>
     </form>
-    <p class="meta">Première fois ? Entre un courriel et un mot de passe : ton compte est créé tout de suite.</p></div>`;
+    <p class="meta">Première connexion ? Entre ton courriel et un mot de passe pour créer ton compte.</p></div>`;
 }
 
 function viewNewPassword() {
