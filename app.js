@@ -125,7 +125,7 @@ const ICONS = {
   star: '<path d="M12 3.5l2.6 5.3 5.9.9-4.2 4.1 1 5.8L12 16.9l-5.3 2.7 1-5.8L3.5 9.7l5.9-.9z"/>',
   camera: '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
   breast: '<path d="M6 8c-1.5 2.5-2 5-2 7a8 8 0 0 0 16 0c0-2-.5-4.5-2-7"/><path d="M6 8c2-2.5 4-4 6-4s4 1.5 6 4"/><circle cx="12" cy="15" r="1.8"/>',
-  pump: '<path d="M3 10a5 5 0 0 1 10 0v1H3z"/><path d="M8 11v3h6"/><rect x="14" y="9" width="7" height="12" rx="2"/><path d="M16.5 9V6.5h2V9"/>',
+  pump: '<path d="M2.8 5.3c-.4-.9.3-1.7 1.2-1.4L9.5 6.2v3.6l-5.5 2.3c-.9.3-1.6-.5-1.2-1.4z"/><path d="M9.5 8h2.5"/><rect x="12" y="6.3" width="9" height="3.4" rx="1.4"/><path d="M13.2 9.7V18a2.8 2.8 0 0 0 2.8 2.8h1a2.8 2.8 0 0 0 2.8-2.8V9.7"/><path d="M13.2 13.5h2M13.2 16.5h2"/>',
   play: '<path d="M8 5.5v13l10-6.5z"/>',
   pause: '<path d="M8 5v14M16 5v14"/>',
   pencil: '<path d="M4 20l4.5-1L19 8.5l-3.5-3.5L5 15.5z"/><path d="M13.5 7l3.5 3.5"/>',
