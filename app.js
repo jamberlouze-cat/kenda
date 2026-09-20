@@ -1842,7 +1842,7 @@ function sheetAllergen() {
       <input type="text" id="al-food" class="row-input" placeholder="Ajouter" value="${esc(s.food)}" maxlength="120" autocomplete="off" enterkeyhint="done">
     </label>
     <p class="row-label al-seg-label">Réaction</p>
-    <div class="segmented in-sheet mint">${Object.entries(REACTIONS).map(([k, l]) => `<button class="${s.reaction === k ? "on" : ""} ${k !== "none" ? "bad" : ""}" data-action="al-reaction" data-reaction="${k}">${l}</button>`).join("")}</div>
+    <div class="segmented in-sheet mint">${Object.entries(REACTIONS).map(([k, l]) => `<button class="${s.reaction === k ? "on" : ""} r-${k}" data-action="al-reaction" data-reaction="${k}">${l}</button>`).join("")}</div>
     <div class="al-symptoms ${bad ? "" : "hidden"}">
       ${Object.entries(SYMPTOMS).map(([k, l]) => `<button class="pill small rosy ${s.symptoms.includes(k) ? "on" : ""}" data-action="al-symptom" data-symptom="${k}" aria-pressed="${s.symptoms.includes(k)}">${l}</button>`).join("")}
       <label class="pill small rosy photo ${cur ? "on" : ""}">${icon("camera")} Photo<input type="file" accept="image/*" data-change="sheet-photo" aria-label="Choisir une photo"></label>
