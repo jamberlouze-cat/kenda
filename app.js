@@ -136,6 +136,7 @@ const ICONS = {
   scale: '<rect x="4" y="4" width="16" height="16" rx="3.5"/><path d="M8 12a4 4 0 0 1 8 0"/><path d="M8 12h8"/><path d="M12 12l1.6-2.6"/>',
   height: '<path d="M7 4.5v15"/><path d="M4.5 7L7 4.5 9.5 7M4.5 17L7 19.5 9.5 17"/><path d="M14 6h6M14 10h3.5M14 14h6M14 18h3.5"/>',
   peanut: '<path d="M8.4 3.6a4.3 4.3 0 0 1 4.3 4.3c0 1.1.5 1.9 1.5 2.5a5.3 5.3 0 1 1-7.6 6.2c-.3-1.3-.9-2.1-1.9-2.8A4.3 4.3 0 0 1 8.4 3.6z"/><path d="M8 7.2v.01M10.4 12.4v.01M13 16.6v.01M15.8 13.6v.01"/>',
+  info: '<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5M12 7.8v.01"/>',
   alert: '<path d="M12 4.5l8.5 14.5h-17z"/><path d="M12 10.5v3.8M12 16.6v.01"/>',
   head: '<circle cx="12" cy="12" r="7.5"/><path d="M4.5 12c0-1.3 3.4-2.4 7.5-2.4s7.5 1.1 7.5 2.4"/><path d="M4.5 12c0 1.3 3.4 2.4 7.5 2.4s7.5-1.1 7.5-2.4" stroke-dasharray="2 2.2"/>',
 };
@@ -992,7 +993,7 @@ function renderSheet() {
   if (!el || !state.sheet) return;
   const t = state.sheet.type;
   const body = t === "feed" ? sheetFeed() : t === "diaper" ? sheetDiaper() : t === "growth" ? sheetGrowth() : t === "first" ? sheetFirst()
-    : t === "nursing" ? sheetNursing() : t === "pump" ? sheetPump() : t === "allergen" ? sheetAllergen() : t === "feedChoice" ? sheetFeedChoice()
+    : t === "nursing" ? sheetNursing() : t === "pump" ? sheetPump() : t === "allergen" ? sheetAllergen() : t === "alInfo" ? sheetAllergenInfo() : t === "feedChoice" ? sheetFeedChoice()
     : t === "babies" ? sheetBabies() : sheetNewBaby();
   const form = FORM_SHEETS.has(t);
   el.classList.toggle("form-sheet", form);
@@ -1705,7 +1706,8 @@ function homeAllergens() {
   const days = oldest ? daysAgo(new Date(oldest.last), now) : 0;
   const line = oldest ? `<button class="al-line" data-action="open-allergen" data-key="${esc(oldest.key.split(":")[0])}">
       <span>${esc(alLabel(oldest.key))}</span><span class="al-ago ${days > AL_WEEK ? "late" : ""}">${agoDays(days)}</span></button>` : "";
-  return moduleCard("allergenes", "Allergènes", "Ajouter un allergène", `<div class="al-grid home">${grid}</div>${line}`, null);
+  const title = `Allergènes<button class="info-btn" data-action="al-info" aria-label="Comment utiliser ce module">${icon("info")}</button>`;
+  return moduleCard("allergenes", title, "Ajouter un allergène", `<div class="al-grid home">${grid}</div>${line}`, null);
 }
 
 function exposureRow(e, def, stats) {
@@ -1751,6 +1753,25 @@ function pageAllergen() {
       <button class="page-add" data-action="add-allergenes" aria-label="Ajouter">${icon("plus")}</button>
     </div>${top}
     ${rows.length ? `<div class="card list">${rows.map((e) => exposureRow(e, def, stats)).join("")}</div>` : `<div class="empty">Pas encore introduit.</div>`}`;
+}
+
+/** Le « i » du bloc : le mode d'emploi, sur demande seulement (rien d'expliqué dans l'interface elle-même). */
+function sheetAllergenInfo() {
+  const dot = (status, count = 0) => alDot({ status, count, extra: 0 });
+  const item = (d, title, text) => `<div class="al-help">${d}<p><b>${title}</b>${text}</p></div>`;
+  return `<h2>Allergènes</h2>
+    ${item(dot("new"), "Pas encore introduit", "")}
+    ${item(dot("trying", 2), "En cours", ` — le chiffre compte les fois données sans réaction.`)}
+    ${item(dot("ok"), "Toléré", ` — ${AL_TOLERATED} fois sans réaction. Continue d'en donner chaque semaine.`)}
+    ${item(dot("reaction"), "Réaction", ` — reste marqué. Cesse cet aliment, continue les autres, parles-en au médecin.`)}
+    <ul class="al-help-list">
+      <li><b>Un nouveau à la fois.</b> Une entrée contient un seul allergène pas encore toléré ; les tolérés peuvent s'y ajouter (beurre d'arachide sur une rôtie).</li>
+      <li><b>Noix, poisson, fruits de mer.</b> Chaque variété s'introduit séparément : touche la famille, puis la variété.</li>
+      <li><b>Aliment.</b> Ce que bébé a mangé (yogourt, tofu…). Facultatif.</li>
+      <li><b>Réaction plus tard ?</b> Rouvre l'entrée et change la réaction. Symptômes et photo serviront au médecin.</li>
+      <li><b>Ligne du bas.</b> Le toléré que bébé n'a pas mangé depuis le plus longtemps ; orangée après ${AL_WEEK} jours.</li>
+    </ul>
+    <p class="meta">D'après le guide d'Allergies Québec (2024). Kenda ne remplace pas un avis médical.</p>`;
 }
 
 function openAllergenSheet(row, preset = null) {
@@ -1821,7 +1842,8 @@ function sheetAllergen() {
       <span class="row-label">Aliment</span>
       <input type="text" id="al-food" class="row-input" placeholder="Ajouter" value="${esc(s.food)}" maxlength="120" autocomplete="off" enterkeyhint="done">
     </label>
-    <div class="segmented in-sheet mint">${Object.entries(REACTIONS).map(([k, l]) => `<button class="${s.reaction === k ? "on" : ""} ${k !== "none" ? "bad" : ""}" data-action="al-reaction" data-reaction="${k}">${k === "none" ? "Aucune réaction" : l}</button>`).join("")}</div>
+    <p class="row-label al-seg-label">Réaction</p>
+    <div class="segmented in-sheet mint">${Object.entries(REACTIONS).map(([k, l]) => `<button class="${s.reaction === k ? "on" : ""} ${k !== "none" ? "bad" : ""}" data-action="al-reaction" data-reaction="${k}">${l}</button>`).join("")}</div>
     <div class="al-symptoms ${bad ? "" : "hidden"}">
       ${Object.entries(SYMPTOMS).map(([k, l]) => `<button class="pill small rosy ${s.symptoms.includes(k) ? "on" : ""}" data-action="al-symptom" data-symptom="${k}" aria-pressed="${s.symptoms.includes(k)}">${l}</button>`).join("")}
       <label class="pill small rosy photo ${cur ? "on" : ""}">${icon("camera")} Photo<input type="file" accept="image/*" data-change="sheet-photo" aria-label="Choisir une photo"></label>
@@ -2347,6 +2369,7 @@ document.addEventListener("click", async (e) => {
     case "add-allergenes": return openAllergenSheet(null, state.page === "allergen" ? state.allergen : null);
     case "edit-allergenes": { const x = state.allergen_exposures.find((r) => r.id === btn.dataset.id); if (x) openAllergenSheet(x); return; }
     case "open-allergen": state.page = "allergen"; state.allergen = btn.dataset.key; renderApp(); window.scrollTo(0, 0); return;
+    case "al-info": return openSheet({ type: "alInfo" });
     case "al-pick": return allergenPick(btn.dataset.key);
     case "al-custom": state.sheet.custom = true; redrawAllergen(); return $("#al-custom")?.focus({ preventScroll: true });
     case "al-custom-ok": return allergenCustom();

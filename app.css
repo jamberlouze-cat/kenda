@@ -594,5 +594,13 @@ textarea.row-input { line-height: 1.35; }
 .al-mark { width: 10px; height: 10px; border-radius: 50%; background: var(--mint); flex: none; }
 .al-mark.bad { background: #D98A82; }
 .meta.bad { color: var(--rosy-dark); }
-.segmented.mint button { white-space: nowrap; }
-.segmented.mint button:first-child { flex: 1.5; }
+.al-seg-label { padding: 12px 20px 0; font-size: 19px; }
+.sheet.mod-allergen .segmented.in-sheet { margin-top: 6px; margin-bottom: 0; }
+.info-btn { display: inline-grid; place-items: center; width: 34px; height: 34px; margin: -6px 0 -6px 4px; vertical-align: middle; color: var(--mint-dark); opacity: .75; }
+.info-btn .ic { width: 21px; height: 21px; }
+.al-help { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.al-help .al-dot { width: 36px; height: 36px; font-size: 14px; }
+.al-help .al-dot .ic { width: 18px; height: 18px; }
+.al-help p, .al-help-list li { font-size: 15px; line-height: 1.4; }
+.al-help b, .al-help-list b { color: var(--mint-dark); font-weight: 700; }
+.al-help-list { margin: 14px 0; padding: 14px 0 0 18px; border-top: 1px solid var(--cream-line); display: flex; flex-direction: column; gap: 8px; }
