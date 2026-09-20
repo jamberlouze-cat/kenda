@@ -14,7 +14,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="Kenda">
   <link rel="apple-touch-icon" href="assets/icon-180.png">
-  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="icon" href="assets/icon-192.png" type="image/png">
 
   <!-- Polices (gardées en cache par sw.js ; repli sur les polices du système hors ligne) -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -23,8 +23,8 @@
   <link rel="stylesheet" href="app.css">
 
   <!-- Version DEV : toute adresse autre que celle de production (la branche dev
-       sur Cloudflare, dev-kenda…) prend un nom et une icône à part (fond
-       foncé), pour ne pas la confondre avec la vraie app sur l'iPhone. -->
+       sur Cloudflare, dev-kenda…) prend un nom et une icône à part (bandeau
+       « DEV »), pour ne pas la confondre avec la vraie app sur l'iPhone. -->
   <script>
     (function () {
       var PROD_HOSTS = ["kenda.jamberlouze.workers.dev"];
@@ -34,7 +34,7 @@
       var set = function (sel, attr, v) { var el = document.querySelector(sel); if (el) el.setAttribute(attr, v); };
       set('link[rel="manifest"]', "href", "manifest-dev.webmanifest");
       set('link[rel="apple-touch-icon"]', "href", "assets/icon-dev-180.png");
-      set('link[rel="icon"]', "href", "assets/icon-dev.svg");
+      set('link[rel="icon"]', "href", "assets/icon-dev-192.png");
       set('meta[name="apple-mobile-web-app-title"]', "content", "Kenda DEV");
     })();
   </script>
