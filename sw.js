@@ -7,7 +7,7 @@
 // Les données (API Supabase) ne passent jamais par ici : c'est app.js qui en
 // garde une copie sur l'appareil.
 // ⚠️ Augmenter CACHE à chaque changement de la liste SHELL.
-const CACHE = "kenda-v11";
+const CACHE = "kenda-v12";
 const FONT_CACHE = "kenda-fonts";
 const NETWORK_TIMEOUT = 3000;
 const SHELL = [
@@ -25,10 +25,9 @@ const SHELL = [
   "./lib/photos.js",
   "./manifest.webmanifest",
   "./manifest-dev.webmanifest",
-  "./assets/icon.svg",
   "./assets/icon-180.png",
   "./assets/icon-192.png",
-  "./assets/icon-dev.svg",
+  "./assets/icon-dev-192.png",
   "./assets/icon-dev-180.png",
 ];
 const FONT_HOSTS = ["fonts.googleapis.com", "fonts.gstatic.com"];
