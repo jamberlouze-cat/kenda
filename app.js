@@ -130,6 +130,9 @@ const ICONS = {
   pause: '<path d="M8 5v14M16 5v14"/>',
   pencil: '<path d="M4 20l4.5-1L19 8.5l-3.5-3.5L5 15.5z"/><path d="M13.5 7l3.5 3.5"/>',
   drop: '<path d="M12 3.5c-2.5 3.2-6 7.3-6 11a6 6 0 0 0 12 0c0-3.7-3.5-7.8-6-11z"/>',
+  scale: '<rect x="3" y="10" width="18" height="10" rx="2"/><path d="M7.5 10a4.5 4.5 0 0 1 9 0"/><path d="M12 13.5v2.5"/>',
+  height: '<path d="M7 4.5v15"/><path d="M4.5 7L7 4.5 9.5 7M4.5 17L7 19.5 9.5 17"/><path d="M14 6h6M14 10h3.5M14 14h6M14 18h3.5"/>',
+  head: '<circle cx="12" cy="12" r="7.5"/><path d="M4.5 12c0-1.3 3.4-2.4 7.5-2.4s7.5 1.1 7.5 2.4"/><path d="M4.5 12c0 1.3 3.4 2.4 7.5 2.4s7.5-1.1 7.5-2.4" stroke-dasharray="2 2.2"/>',
 };
 function icon(name) {
   return `<svg class="ic ic-${name}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ""}</svg>`;
@@ -380,10 +383,12 @@ function lastMeasure(measure) {
   const col = MEASURES[measure].col;
   return sortBy(ofBaby("growth"), "measured_on").find((g) => g[col] != null) || null;
 }
+const MEASURE_ICON = { weight: "scale", height: "height", head: "head" };
 function homeGrowth() {
   const rows = Object.entries(MEASURES).map(([m, def]) => {
     const g = lastMeasure(m);
     return `<button class="measure-row" data-action="open-page" data-page="growth" data-measure="${m}">
+        <span class="measure-icon">${icon(MEASURE_ICON[m])}</span>
         <span class="measure-name">${def.label}</span>
         ${g ? `<span class="measure-val">${formatMeasure(m, g[def.col])}</span><span class="meta">${esc(fmtDate(g.measured_on, { day: "numeric", month: "short" }))}</span>`
     : `<span class="meta">—</span>`}

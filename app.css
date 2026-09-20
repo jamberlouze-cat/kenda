@@ -372,7 +372,9 @@ button.form-row { width: 100%; text-align: left; }
 .row-tags { --mod-dark: var(--yellow-dark); --mod-soft: var(--yellow-soft); }
 
 .measure-list { padding: 30px 0 4px; }
-.measure-row { display: flex; align-items: baseline; gap: 10px; width: 100%; text-align: left; padding: 12px 20px; border-top: 1px solid var(--cream-line); }
+.measure-row { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 10px 20px; border-top: 1px solid var(--cream-line); }
+.measure-icon { width: 36px; height: 36px; border-radius: 50%; background: var(--mod-soft); color: var(--mod-dark); display: grid; place-items: center; flex: none; }
+.measure-icon .ic { width: 21px; height: 21px; stroke-width: 1.5; }
 .measure-row:first-child { border-top: 0; }
 .measure-name { flex: 1; font-family: var(--font-display); font-weight: 300; font-size: 19px; color: var(--mod-dark); }
 .measure-val { font: 700 17px var(--font-num); white-space: nowrap; }
