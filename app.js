@@ -1701,11 +1701,10 @@ const agoDays = (n) => (n <= 0 ? "aujourd'hui" : n === 1 ? "hier" : `il y a ${n}
 function homeAllergens() {
   const stats = allergenStats(), now = new Date();
   const grid = ALLERGENS.map((def) => `<button class="al" data-action="open-allergen" data-key="${def.id}">${alDot(alBadge(def, stats))}<span>${def.label}</span></button>`).join("");
-  // Le toléré redonné il y a le plus longtemps : un constat, pas un rappel.
-  const oldest = [...stats.values()].filter((st) => alStatus(st) === "ok").sort((a, b) => (a.last < b.last ? -1 : 1))[0];
-  const days = oldest ? daysAgo(new Date(oldest.last), now) : 0;
-  const line = oldest ? `<button class="al-line" data-action="open-allergen" data-key="${esc(oldest.key.split(":")[0])}">
-      <span>${esc(alLabel(oldest.key))}</span><span class="al-ago ${days > AL_WEEK ? "late" : ""}">${agoDays(days)}</span></button>` : "";
+  // « À redonner » : les tolérés que bébé n'a pas mangés depuis plus d'une semaine (le guide demande
+  // au moins une fois par semaine). Un constat, pas un rappel ; rien à montrer quand tout est à jour.
+  const due = [...stats.values()].filter((st) => alStatus(st) === "ok" && daysAgo(new Date(st.last), now) > AL_WEEK).sort((a, b) => (a.last < b.last ? -1 : 1));
+  const line = due.length ? `<div class="al-due"><p class="al-due-title">À redonner</p><div class="al-due-list">${due.map((st) => `<button class="al-due-chip" data-action="open-allergen" data-key="${esc(st.key.split(":")[0])}">${esc(alLabel(st.key))}<small>${daysAgo(new Date(st.last), now)} j</small></button>`).join("")}</div></div>` : "";
   const title = `Allergènes<button class="info-btn" data-action="al-info" aria-label="Comment utiliser ce module">${icon("info")}</button>`;
   return moduleCard("allergenes", title, "Ajouter un allergène", `<div class="al-grid home">${grid}</div>${line}`, null);
 }
@@ -1769,7 +1768,7 @@ function sheetAllergenInfo() {
       <li><b>Noix, poisson, fruits de mer.</b> Chaque variété s'introduit séparément : touche la famille, puis la variété.</li>
       <li><b>Aliment.</b> Ce que bébé a mangé (yogourt, tofu…). Facultatif.</li>
       <li><b>Réaction plus tard ?</b> Rouvre l'entrée et change la réaction. Symptômes et photo serviront au médecin.</li>
-      <li><b>Ligne du bas.</b> Le toléré que bébé n'a pas mangé depuis le plus longtemps ; orangée après ${AL_WEEK} jours.</li>
+      <li><b>À redonner.</b> Les tolérés que bébé n'a pas mangés depuis plus de ${AL_WEEK} jours, avec le nombre de jours. Pour garder la tolérance, vise au moins une fois par semaine.</li>
     </ul>
     <p class="meta">D'après le guide d'Allergies Québec (2024). Kenda ne remplace pas un avis médical.</p>`;
 }

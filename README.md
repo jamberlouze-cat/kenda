@@ -141,7 +141,7 @@ Ouvre l'adresse dans **Safari** → **Partager** → **Sur l'écran d'accueil**.
   l'état de chaque allergène est calculé par l'app : pas introduit → en cours → toléré après 3 expositions
   sans réaction → réaction (reste marquée). Noix, poissons et fruits de mer se suivent une variété à la
   fois (clés `noix:cajou`). Au plus un allergène non toléré par entrée ; les tolérés se combinent.
-  L'accueil montre le toléré redonné il y a le plus longtemps (orangé après 7 jours). Aucun conseil médical.
+  L'accueil liste sous « À redonner » les tolérés pas mangés depuis plus de 7 jours (rien si tout est à jour) ; le « i » du bloc ouvre le mode d'emploi. Aucun conseil médical.
 - **Photos** des mesures, des premières et des séances de tire-lait : réduites à 640 px sur l'appareil,
   gardées dans la base, mais pas dans l'instantané localStorage (trop petit) :
   copie dans IndexedDB (`lib/photos.js`), chargée à part de la liste.

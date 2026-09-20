@@ -560,9 +560,11 @@ textarea.row-input { line-height: 1.35; }
 .al.sel .al-dot { outline: 2.5px solid var(--mint-dark); outline-offset: 2px; }
 .al.open span { color: var(--mint-dark); font-weight: 700; }
 .al.off, .pill.off { opacity: .32; pointer-events: none; }
-.al-line { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 14px 20px; border-top: 1px solid var(--cream-line); font-size: 15px; font-weight: 600; color: var(--mint-dark); }
-.al-ago { font-weight: 400; font-size: 14px; color: var(--muted); }
-.al-ago.late { background: color-mix(in srgb, var(--alert) 60%, var(--cream)); color: var(--alert-dark); border-radius: 999px; padding: 1px 10px; margin-right: -4px; }
+.al-due { padding: 12px 20px 16px; border-top: 1px solid var(--cream-line); }
+.al-due-title { font: 600 13px var(--font-body); color: var(--muted); margin-bottom: 8px; }
+.al-due-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.al-due-chip { display: inline-flex; align-items: baseline; gap: 6px; padding: 6px 12px; border-radius: 999px; font-size: 14px; font-weight: 600; background: color-mix(in srgb, var(--alert) 50%, var(--cream)); color: var(--alert-dark); }
+.al-due-chip small { font: 700 12px var(--font-num); opacity: .8; }
 /* fiche : les rangées de puces gardent leur place, visibles ou non — rien ne bouge sous le doigt */
 .al-kinds-row { display: flex; align-items: center; gap: 6px; height: 52px; padding: 0 20px; overflow-x: auto; scrollbar-width: none; border-bottom: 1px solid var(--cream-line); }
 .al-kinds-row::-webkit-scrollbar { display: none; }
