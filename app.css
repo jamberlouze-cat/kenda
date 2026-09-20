@@ -537,7 +537,9 @@ textarea.row-input { line-height: 1.35; }
 .total-row .row-value { font: 700 17px var(--font-num); color: var(--text); }
 
 /* ---------- allergènes ---------- */
-:root { --mint: #A9D6C9; --mint-soft: #DDF0EA; --mint-dark: #2F6558; --rosy: #F3C4BE; --rosy-soft: #F9E1DD; --rosy-dark: #8A3A33; }
+:root { --mint: #A9D6C9; --mint-soft: #DDF0EA; --mint-dark: #2F6558; --rosy: #EFA9A1; --rosy-soft: #F9DDD9; --rosy-dark: #7A2A24; --rosy-mark: #D9837A; }
+/* une réaction légère est jaune, une importante rouge : la classe sev-mild repeint tout ce qui est « rosy » */
+.sev-mild { --rosy: var(--yellow); --rosy-soft: var(--yellow-soft); --rosy-dark: var(--yellow-dark); --rosy-mark: #D9B84E; }
 .mod-card.allergenes { --mod: var(--mint); --mod-soft: var(--mint-soft); --mod-dark: var(--mint-dark); }
 .mod-item.allergenes { border-left-color: var(--mint); }
 .mod-item.allergenes .mod-dot { color: var(--mint-dark); }
@@ -582,7 +584,7 @@ textarea.row-input { line-height: 1.35; }
 /* réaction : vert = aucune, jaune = légère, rouge = importante */
 .segmented.mint button.on.r-none { background: var(--green); color: var(--green-dark); }
 .segmented.mint button.on.r-mild { background: var(--yellow); color: var(--yellow-dark); }
-.segmented.mint button.on.r-severe { background: #EFA9A1; color: #7A2A24; }
+.segmented.mint button.on.r-severe { background: var(--rosy); color: var(--rosy-dark); }
 .sheet.mod-allergen .form-row { min-height: 60px; }
 .sheet.mod-allergen .row-label { color: var(--mint-dark); }
 /* détail d'un allergène */
@@ -597,7 +599,7 @@ textarea.row-input { line-height: 1.35; }
 .al-kind-name { flex: 1; font-size: 16px; color: var(--mint-dark); }
 .al-row .feed-time { color: var(--mint-dark); }
 .al-mark { width: 10px; height: 10px; border-radius: 50%; background: var(--mint); flex: none; }
-.al-mark.bad { background: #D98A82; }
+.al-mark.bad { background: var(--rosy-mark); }
 .meta.bad { color: var(--rosy-dark); }
 .al-seg-label { padding: 12px 20px 0; font-size: 19px; }
 .sheet.mod-allergen .segmented.in-sheet { margin-top: 6px; margin-bottom: 0; }

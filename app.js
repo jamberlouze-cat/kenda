@@ -1664,7 +1664,8 @@ function alLabel(key, full = false) {
 
 /** L'état de chaque clé, en rejouant les expositions de la plus vieille à la plus
  *  récente. Une réaction est imputée à ce qui n'était pas encore toléré ce jour-là
- *  (le beurre d'arachide, pas la rôtie) ; si tout l'était, à tout. Une réaction reste marquée. */
+ *  (le beurre d'arachide, pas la rôtie) ; si tout l'était, à tout. Une réaction reste marquée.
+ *  Partout, une réaction légère est jaune et une importante rouge (classes sev-mild / sev-severe). */
 function allergenStats(exceptId = null) {
   const stats = new Map(), now = new Date();
   const get = (key) => { if (!stats.has(key)) stats.set(key, { key, count: 0, reaction: null, last: null, rows: [] }); return stats.get(key); };
@@ -1675,7 +1676,9 @@ function allergenStats(exceptId = null) {
     const suspects = bad ? keys.filter((k) => alStatus(stats.get(k)) !== "ok") : [];
     for (const k of keys) {
       const st = get(k);
-      if (bad && (!suspects.length || suspects.includes(k))) st.reaction = e; else st.count++;
+      // On garde la pire réaction (à gravité égale, la plus récente) : c'est elle qui colore la pastille.
+      if (bad && (!suspects.length || suspects.includes(k))) { if (e.reaction === "severe" || st.reaction?.reaction !== "severe") st.reaction = e; }
+      else st.count++;
       st.last = e.given_at; st.rows.unshift(e);
     }
   }
@@ -1687,14 +1690,15 @@ const familyStats = (def, stats) => [...stats.values()].filter((st) => st.key.st
 /** Pastille : pointillé (pas introduit), chiffre (en cours), crochet (toléré), triangle (réaction).
  *  Pour une famille : la variété la plus avancée, et le nombre de variétés tolérées en coin. */
 function alBadge(def, stats) {
-  if (!def.kinds) { const st = stats.get(def.id), status = alStatus(st); return { status, count: st?.count || 0, extra: 0 }; }
+  if (!def.kinds) { const st = stats.get(def.id), status = alStatus(st); return { status, count: st?.count || 0, extra: 0, sev: st?.reaction?.reaction }; }
   const kinds = familyStats(def, stats), ok = kinds.filter((st) => alStatus(st) === "ok").length;
   const status = kinds.some((st) => st.reaction) ? "reaction" : ok ? "ok" : kinds.some((st) => st.count) ? "trying" : "new";
-  return { status, count: Math.max(0, ...kinds.map((st) => st.count)), extra: ok > 1 ? ok : 0 };
+  const sev = kinds.some((st) => st.reaction?.reaction === "severe") ? "severe" : "mild";
+  return { status, count: Math.max(0, ...kinds.map((st) => st.count)), extra: ok > 1 ? ok : 0, sev };
 }
 function alDot(b) {
   const inner = b.status === "ok" ? icon("check") : b.status === "reaction" ? icon("alert") : b.status === "trying" ? b.count : "";
-  return `<b class="al-dot ${b.status}">${inner}${b.extra ? `<i>${b.extra}</i>` : ""}</b>`;
+  return `<b class="al-dot ${b.status} ${b.status === "reaction" ? `sev-${b.sev || "severe"}` : ""}">${inner}${b.extra ? `<i>${b.extra}</i>` : ""}</b>`;
 }
 const agoDays = (n) => (n <= 0 ? "aujourd'hui" : n === 1 ? "hier" : `il y a ${n} jours`);
 
@@ -1717,9 +1721,9 @@ function exposureRow(e, def, stats) {
   const labels = def.kinds || (e.allergens || []).length > 1 ? e.allergens.map((k) => alLabel(k)).join(", ") : "";
   const sub = [bad ? [REACTIONS[e.reaction], ...(e.symptoms || []).map((x) => SYMPTOMS[x] || x)].join(" · ") : "", labels, e.food || ""].filter(Boolean);
   return `<button class="feed-row al-row" data-action="edit-allergenes" data-id="${e.id}">
-      <i class="al-mark ${blamed ? "bad" : ""}"></i>
+      <i class="al-mark ${blamed ? `bad sev-${e.reaction}` : ""}"></i>
       <span class="feed-main"><span class="feed-time">${esc(fr(new Date(e.given_at), { day: "numeric", month: "short" }))} · ${fmtTime(e.given_at)}${who ? ` <span class="meta">· ${esc(who.name)}</span>` : ""}${unsent ? ` <span class="unsent" title="Pas encore envoyé">${icon("cloudUp")}</span>` : ""}</span>
-        ${sub.length ? `<span class="meta ${blamed ? "bad" : ""}">${esc(sub.join(" · "))}</span>` : ""}</span>
+        ${sub.length ? `<span class="meta ${blamed ? `bad sev-${e.reaction}` : ""}">${esc(sub.join(" · "))}</span>` : ""}</span>
       ${photo ? `<img src="${esc(photo)}" alt="" class="photo-thumb">` : ""}
       <span class="chev">${icon("right")}</span></button>`;
 }
@@ -1729,7 +1733,7 @@ function pageAllergen() {
   const def = alDef(state.allergen) || ALLERGENS[0], stats = allergenStats(), now = new Date();
   const banner = (st) => {
     const status = alStatus(st);
-    if (status === "reaction") return `<p class="al-state bad">Réaction ${st.reaction.reaction === "severe" ? "importante" : "légère"} · ${esc(fr(new Date(st.reaction.given_at), { day: "numeric", month: "short" }))}</p>`;
+    if (status === "reaction") return `<p class="al-state bad sev-${st.reaction.reaction}">Réaction ${st.reaction.reaction === "severe" ? "importante" : "légère"} · ${esc(fr(new Date(st.reaction.given_at), { day: "numeric", month: "short" }))}</p>`;
     if (status === "ok") return `<p class="al-state">Toléré · ${st.count} fois · ${agoDays(daysAgo(new Date(st.last), now))}</p>`;
     if (status === "trying") return `<p class="al-state soft">${st.count} sur ${AL_TOLERATED}</p>`;
     return "";
@@ -1737,7 +1741,7 @@ function pageAllergen() {
   let top, rows;
   if (def.kinds) {
     const kinds = familyStats(def, stats).sort((a, b) => (a.last < b.last ? 1 : -1));
-    top = kinds.length ? `<div class="card list al-kinds">${kinds.map((st) => `<div class="al-kind">${alDot({ status: alStatus(st), count: st.count, extra: 0 })}
+    top = kinds.length ? `<div class="card list al-kinds">${kinds.map((st) => `<div class="al-kind">${alDot({ status: alStatus(st), count: st.count, extra: 0, sev: st.reaction?.reaction })}
         <span class="al-kind-name">${esc(alLabel(st.key))}</span><span class="meta">${agoDays(daysAgo(new Date(st.last), now))}</span></div>`).join("")}</div>` : "";
     const seen = new Set(); rows = [];
     for (const st of kinds) for (const e of st.rows) if (!seen.has(e.id)) { seen.add(e.id); rows.push(e); }
@@ -1756,13 +1760,13 @@ function pageAllergen() {
 
 /** Le « i » du bloc : le mode d'emploi, sur demande seulement (rien d'expliqué dans l'interface elle-même). */
 function sheetAllergenInfo() {
-  const dot = (status, count = 0) => alDot({ status, count, extra: 0 });
+  const dot = (status, count = 0, sev) => alDot({ status, count, extra: 0, sev });
   const item = (d, title, text) => `<div class="al-help">${d}<p><b>${title}</b>${text}</p></div>`;
   return `<h2>Allergènes</h2>
     ${item(dot("new"), "Pas encore introduit", "")}
     ${item(dot("trying", 2), "En cours", ` — le chiffre compte les fois données sans réaction.`)}
     ${item(dot("ok"), "Toléré", ` — ${AL_TOLERATED} fois sans réaction. Continue d'en donner chaque semaine.`)}
-    ${item(dot("reaction"), "Réaction", ` — reste marqué. Cesse cet aliment, continue les autres, parles-en au médecin.`)}
+    ${item(dot("reaction", 0, "mild") + dot("reaction", 0, "severe"), "Réaction", ` — jaune : légère, rouge : importante. Reste marqué. Cesse cet aliment, continue les autres, parles-en au médecin.`)}
     <ul class="al-help-list">
       <li><b>Un nouveau à la fois.</b> Une entrée contient un seul allergène pas encore toléré ; les tolérés peuvent s'y ajouter (beurre d'arachide sur une rôtie).</li>
       <li><b>Noix, poisson, fruits de mer.</b> Chaque variété s'introduit séparément : touche la famille, puis la variété.</li>
@@ -1824,7 +1828,7 @@ function sheetAllergen() {
   } else if (fam) {
     // Les variétés déjà données d'abord (la rangée défile), puis les suggestions ; l'ordre ne change pas quand on en touche une.
     const keys = [...new Set([...familyStats(fam, stats).map((st) => st.key), ...Object.keys(fam.kinds).map((k) => `${fam.id}:${k}`), ...s.keys.filter((k) => k.startsWith(fam.id + ":"))])];
-    kinds = keys.map((k) => `<button class="pill small mint ${s.keys.includes(k) ? "on" : ""} ${alStatus(stats.get(k))} ${off(k) ? "off" : ""}" data-action="al-pick" data-key="${esc(k)}" aria-pressed="${s.keys.includes(k)}">${esc(alLabel(k))}</button>`).join("")
+    kinds = keys.map((k) => `<button class="pill small mint ${s.keys.includes(k) ? "on" : ""} ${alStatus(stats.get(k))} sev-${stats.get(k)?.reaction?.reaction || "none"} ${off(k) ? "off" : ""}" data-action="al-pick" data-key="${esc(k)}" aria-pressed="${s.keys.includes(k)}">${esc(alLabel(k))}</button>`).join("")
       + `<button class="pill small" data-action="al-custom">Autre…</button>`;
   }
   const bad = s.reaction !== "none";
@@ -1843,7 +1847,7 @@ function sheetAllergen() {
     </label>
     <p class="row-label al-seg-label">Réaction</p>
     <div class="segmented in-sheet mint">${Object.entries(REACTIONS).map(([k, l]) => `<button class="${s.reaction === k ? "on" : ""} r-${k}" data-action="al-reaction" data-reaction="${k}">${l}</button>`).join("")}</div>
-    <div class="al-symptoms ${bad ? "" : "hidden"}">
+    <div class="al-symptoms sev-${s.reaction} ${bad ? "" : "hidden"}">
       ${Object.entries(SYMPTOMS).map(([k, l]) => `<button class="pill small rosy ${s.symptoms.includes(k) ? "on" : ""}" data-action="al-symptom" data-symptom="${k}" aria-pressed="${s.symptoms.includes(k)}">${l}</button>`).join("")}
       <label class="pill small rosy photo ${cur ? "on" : ""}">${icon("camera")} Photo<input type="file" accept="image/*" data-change="sheet-photo" aria-label="Choisir une photo"></label>
       ${cur ? `<button class="pill small" data-action="sheet-photo-remove">Retirer la photo</button>` : ""}
