@@ -886,7 +886,7 @@ function viewSettings() {
 }
 
 // ------------------------------------------------------ écrans hors de l'app ---
-const brand = `<div class="brand"><span class="brand-icon">${icon("bottle")}</span><h1>Kenda</h1></div>`;
+const brand = `<div class="brand"><img class="brand-icon${window.KENDA_DEV ? " dev" : ""}" src="assets/${window.KENDA_DEV ? "icon-dev-512" : "koala"}.png" alt=""><h1>Kenda</h1></div>`;
 
 function viewConfig() {
   return `<div class="center-screen">${brand}
