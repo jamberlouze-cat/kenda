@@ -96,6 +96,27 @@ create table if not exists public.pumpings (
 create index if not exists idx_nursings_baby_time on public.nursings(baby_id, started_at desc);
 create index if not exists idx_pumpings_baby_time on public.pumpings(baby_id, started_at desc);
 
+-- Une exposition à un ou plusieurs allergènes prioritaires (module « Allergènes »).
+-- `allergens` = clés connues de l'app : « arachide », « oeuf »… ou, pour les
+-- familles introduites une variété à la fois, « noix:cajou », « poisson:saumon ».
+-- L'état de chaque allergène (en cours, toléré, réaction) est calculé par l'app.
+create table if not exists public.allergen_exposures (
+  id           uuid primary key default gen_random_uuid(),
+  baby_id      uuid not null references public.babies(id) on delete cascade,
+  given_at     timestamptz not null,
+  allergens    text[] not null check (cardinality(allergens) between 1 and 20),
+  food         text check (food is null or length(food) <= 120),
+  reaction     text not null default 'none' check (reaction in ('none', 'mild', 'severe')),
+  symptoms     text[] not null default '{}',
+  photo        text check (photo is null or length(photo) < 600000),
+  has_photo    boolean generated always as (photo is not null) stored,
+  caregiver_id uuid references public.caregivers(id) on delete set null,
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now(),
+  deleted_at   timestamptz
+);
+create index if not exists idx_allergens_baby_time on public.allergen_exposures(baby_id, given_at desc);
+
 -- Une couche. Ni mouillée ni sale = sèche. Même mécanique que les boires :
 -- identifiant créé sur l'appareil, suppression douce.
 create table if not exists public.diapers (
@@ -185,6 +206,9 @@ create trigger nursings_keep_latest before update on public.nursings
 drop trigger if exists pumpings_keep_latest on public.pumpings;
 create trigger pumpings_keep_latest before update on public.pumpings
   for each row execute function public.feeds_keep_latest();
+drop trigger if exists allergens_keep_latest on public.allergen_exposures;
+create trigger allergens_keep_latest before update on public.allergen_exposures
+  for each row execute function public.feeds_keep_latest();
 
 -- ---------- Fonction anti-récursion pour les règles RLS ---------------------
 
@@ -208,6 +232,7 @@ alter table public.growth     enable row level security;
 alter table public.firsts     enable row level security;
 alter table public.nursings   enable row level security;
 alter table public.pumpings   enable row level security;
+alter table public.allergen_exposures enable row level security;
 
 drop policy if exists b_select on public.babies;
 create policy b_select on public.babies for select
@@ -256,6 +281,11 @@ create policy n_all on public.nursings for all
 
 drop policy if exists pu_all on public.pumpings;
 create policy pu_all on public.pumpings for all
+  using      (baby_id in (select public.user_baby_ids()))
+  with check (baby_id in (select public.user_baby_ids()));
+
+drop policy if exists a_all on public.allergen_exposures;
+create policy a_all on public.allergen_exposures for all
   using      (baby_id in (select public.user_baby_ids()))
   with check (baby_id in (select public.user_baby_ids()));
 
@@ -342,7 +372,7 @@ grant execute on function public.join_baby(text, text, text)    to authenticated
 do $$
 declare t text;
 begin
-  foreach t in array array['feeds', 'babies', 'caregivers', 'diapers', 'growth', 'firsts', 'nursings', 'pumpings'] loop
+  foreach t in array array['feeds', 'babies', 'caregivers', 'diapers', 'growth', 'firsts', 'nursings', 'pumpings', 'allergen_exposures'] loop
     if not exists (select 1 from pg_publication_tables
                    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t) then
       execute format('alter publication supabase_realtime add table public.%I', t);

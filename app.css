@@ -535,3 +535,64 @@ textarea.row-input { line-height: 1.35; }
 .mod-pump .side .btn-outline { border-color: var(--rose-dark); color: var(--rose-dark); }
 .total-row { background: var(--cream-dark); }
 .total-row .row-value { font: 700 17px var(--font-num); color: var(--text); }
+
+/* ---------- allergènes ---------- */
+:root { --mint: #A9D6C9; --mint-soft: #DDF0EA; --mint-dark: #2F6558; --rosy: #F3C4BE; --rosy-soft: #F9E1DD; --rosy-dark: #8A3A33; }
+.mod-card.allergenes { --mod: var(--mint); --mod-soft: var(--mint-soft); --mod-dark: var(--mint-dark); }
+.mod-item.allergenes { border-left-color: var(--mint); }
+.mod-item.allergenes .mod-dot { color: var(--mint-dark); }
+.page-head.allergenes h2 { color: var(--mint-dark); }
+.page-head.allergenes .page-add { background: var(--mint-soft); color: var(--mint-dark); }
+.sheet.mod-allergen .sheet-band { background: var(--mint); }
+.sheet.mod-allergen .sheet-band h2, .sheet.mod-allergen .band-btn, .sheet.mod-allergen .band-save { color: var(--mint-dark); }
+.sheet.mod-allergen.form-sheet { height: 94vh; height: 94dvh; }
+/* la grille des dix : pointillé = pas introduit, chiffre = en cours, crochet = toléré, triangle = réaction */
+.al-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px 2px; padding: 16px 10px 12px; border-bottom: 1px solid var(--cream-line); }
+.al-grid.home { padding: 40px 10px 16px; border-bottom: 0; }
+.al { display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 12px; line-height: 1.15; color: var(--text); text-align: center; }
+.al-dot { position: relative; width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; font: 700 16px var(--font-num); flex: none; }
+.al-dot .ic { width: 22px; height: 22px; stroke-width: 2; }
+.al-dot.new { border: 1.5px dashed color-mix(in srgb, var(--muted) 55%, var(--cream)); }
+.al-dot.trying { background: var(--mint-soft); color: var(--mint-dark); }
+.al-dot.ok { background: var(--mint); color: var(--mint-dark); }
+.al-dot.reaction { background: var(--rosy); color: var(--rosy-dark); }
+.al-dot i { position: absolute; right: -4px; top: -4px; min-width: 19px; height: 19px; padding: 0 4px; border-radius: 999px; background: var(--mint-dark); color: var(--cream); font: 700 11px/19px var(--font-num); font-style: normal; text-align: center; }
+.al.sel .al-dot { outline: 2.5px solid var(--mint-dark); outline-offset: 2px; }
+.al.open span { color: var(--mint-dark); font-weight: 700; }
+.al.off, .pill.off { opacity: .32; pointer-events: none; }
+.al-line { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 14px 20px; border-top: 1px solid var(--cream-line); font-size: 15px; font-weight: 600; color: var(--mint-dark); }
+.al-ago { font-weight: 400; font-size: 14px; color: var(--muted); }
+.al-ago.late { background: color-mix(in srgb, var(--alert) 60%, var(--cream)); color: var(--alert-dark); border-radius: 999px; padding: 1px 10px; margin-right: -4px; }
+/* fiche : les rangées de puces gardent leur place, visibles ou non — rien ne bouge sous le doigt */
+.al-kinds-row { display: flex; align-items: center; gap: 6px; height: 52px; padding: 0 20px; overflow-x: auto; scrollbar-width: none; border-bottom: 1px solid var(--cream-line); }
+.al-kinds-row::-webkit-scrollbar { display: none; }
+.al-kinds-row .pill { flex: none; }
+.al-symptoms { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 20px 0; min-height: 124px; align-content: flex-start; }
+.al-kinds-row.hidden > *, .al-symptoms.hidden { visibility: hidden; }
+.al-custom { flex: 1; min-width: 0; border: 1.5px solid var(--cream-line); border-radius: 999px; background: var(--cream); padding: 7px 14px; font-size: 16px; outline: none; }
+.pill.mint.on { background: var(--mint); color: var(--mint-dark); font-weight: 700; }
+.pill.mint.reaction { color: var(--rosy-dark); }
+.pill.rosy.on { background: var(--rosy); color: var(--rosy-dark); font-weight: 700; }
+.pill.photo { position: relative; display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+.pill.photo .ic { width: 15px; height: 15px; }
+.pill.photo input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; }
+.segmented.mint button.on { background: var(--mint); color: var(--mint-dark); }
+.segmented.mint button.on.bad { background: var(--rosy); color: var(--rosy-dark); }
+.sheet.mod-allergen .form-row { min-height: 60px; }
+.sheet.mod-allergen .row-label { color: var(--mint-dark); }
+/* détail d'un allergène */
+.al-state { background: var(--mint-soft); color: var(--mint-dark); border-radius: var(--radius-sm); padding: 12px 16px; font-weight: 600; font-size: 15px; margin-bottom: 14px; }
+.al-state.soft { background: var(--cream-dark); }
+.al-state.bad { background: var(--rosy-soft); color: var(--rosy-dark); }
+.al-kinds { margin-bottom: 14px; }
+.al-kind { display: flex; align-items: center; gap: 12px; padding: 9px 14px; border-top: 1px solid var(--cream-line); }
+.al-kind:first-child { border-top: 0; }
+.al-kind .al-dot { width: 34px; height: 34px; font-size: 13px; }
+.al-kind .al-dot .ic { width: 17px; height: 17px; }
+.al-kind-name { flex: 1; font-size: 16px; color: var(--mint-dark); }
+.al-row .feed-time { color: var(--mint-dark); }
+.al-mark { width: 10px; height: 10px; border-radius: 50%; background: var(--mint); flex: none; }
+.al-mark.bad { background: #D98A82; }
+.meta.bad { color: var(--rosy-dark); }
+.segmented.mint button { white-space: nowrap; }
+.segmented.mint button:first-child { flex: 1.5; }

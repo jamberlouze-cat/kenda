@@ -13,7 +13,7 @@ import {
   findPatterns, hourHistogram,
 } from "./lib/stats.js";
 
-const VERSION = "1.1.0";
+const VERSION = "1.2.0";
 const DAY = 86400000;
 const HISTORY_DAYS = 31;          // 2 semaines + les 2 d'avant, pour la comparaison
 const KINDS = { maternel: "Lait maternel", formule: "Formule" };
@@ -27,12 +27,14 @@ const MODULES = {
   croissance: { label: "Croissance", icon: "ruler" },
   premieres: { label: "Premières de bébé", icon: "star" },
   tirelait: { label: "Tire-lait", icon: "pump" },
+  allergenes: { label: "Allergènes", icon: "peanut" },
 };
 // Colonnes chargées pour les listes : tout sauf la photo (lib/photos.js s'en occupe).
 const GROWTH_COLS = "id,baby_id,measured_on,weight_g,height_cm,head_cm,note,has_photo,caregiver_id,created_at,updated_at,deleted_at";
 const FIRSTS_COLS = "id,baby_id,happened_on,title,note,has_photo,caregiver_id,created_at,updated_at,deleted_at";
 const PUMP_COLS = "id,baby_id,started_at,duration_sec,amount_ml,left_ml,right_ml,caregiver_id,created_at,updated_at,deleted_at";
-const SYNCED = ["feeds", "diapers", "growth", "firsts", "nursings", "pumpings"];     // tables à saisie hors ligne (file d'attente)
+const ALLERGEN_COLS = "id,baby_id,given_at,allergens,food,reaction,symptoms,has_photo,caregiver_id,created_at,updated_at,deleted_at";
+const SYNCED = ["feeds", "diapers", "growth", "firsts", "nursings", "pumpings", "allergen_exposures"];     // tables à saisie hors ligne (file d'attente)
 
 // ------------------------------------------------------------------ state ---
 const state = {
@@ -41,8 +43,9 @@ const state = {
   user: null,
   older: {},            // par bébé : total des boires plus vieux que la fenêtre chargée
   babies: [], caregivers: [], feeds: [],   // feeds : tous mes bébés, file d'attente appliquée
-  diapers: [], growth: [], firsts: [], nursings: [], pumpings: [],   // idem pour les autres modules
-  page: null,           // sous-écran ouvert par-dessus l'onglet : diapers | growth | firsts | modules
+  diapers: [], growth: [], firsts: [], nursings: [], pumpings: [], allergen_exposures: [],   // idem pour les autres modules
+  page: null,           // sous-écran ouvert par-dessus l'onglet : diapers | growth | firsts | modules | allergen
+  allergen: null,       // allergènes : celui dont on regarde le détail
   measure: "weight",    // croissance : courbe affichée (weight | height | head)
   growthSel: null,      // croissance : mesure pointée sur la courbe
   modulesDraft: null,   // « Gérer les modules » : brouillon tant qu'on n'a pas enregistré
@@ -132,6 +135,8 @@ const ICONS = {
   drop: '<path d="M12 3.5c-2.5 3.2-6 7.3-6 11a6 6 0 0 0 12 0c0-3.7-3.5-7.8-6-11z"/>',
   scale: '<rect x="4" y="4" width="16" height="16" rx="3.5"/><path d="M8 12a4 4 0 0 1 8 0"/><path d="M8 12h8"/><path d="M12 12l1.6-2.6"/>',
   height: '<path d="M7 4.5v15"/><path d="M4.5 7L7 4.5 9.5 7M4.5 17L7 19.5 9.5 17"/><path d="M14 6h6M14 10h3.5M14 14h6M14 18h3.5"/>',
+  peanut: '<path d="M8.4 3.6a4.3 4.3 0 0 1 4.3 4.3c0 1.1.5 1.9 1.5 2.5a5.3 5.3 0 1 1-7.6 6.2c-.3-1.3-.9-2.1-1.9-2.8A4.3 4.3 0 0 1 8.4 3.6z"/><path d="M8 7.2v.01M10.4 12.4v.01M13 16.6v.01M15.8 13.6v.01"/>',
+  alert: '<path d="M12 4.5l8.5 14.5h-17z"/><path d="M12 10.5v3.8M12 16.6v.01"/>',
   head: '<circle cx="12" cy="12" r="7.5"/><path d="M4.5 12c0-1.3 3.4-2.4 7.5-2.4s7.5 1.1 7.5 2.4"/><path d="M4.5 12c0 1.3 3.4 2.4 7.5 2.4s7.5-1.1 7.5-2.4" stroke-dasharray="2 2.2"/>',
 };
 function icon(name) {
@@ -326,7 +331,7 @@ function homeFeeds() {
 }
 
 function viewHome() {
-  const blocks = { biberon: homeFeeds, couches: homeDiapers, croissance: homeGrowth, premieres: homeFirsts, tirelait: homePump };
+  const blocks = { biberon: homeFeeds, couches: homeDiapers, croissance: homeGrowth, premieres: homeFirsts, tirelait: homePump, allergenes: homeAllergens };
   const on = moduleList().filter((m) => m.on);
   const manage = `<button class="btn ghost block manage-btn" data-action="open-page" data-page="modules">${icon("grip")} Gérer les modules</button>`;
   if (!on.length) return `<div class="empty">Tous les modules sont masqués.</div>${manage}`;
@@ -429,6 +434,7 @@ function homeFirsts() {
 function viewPage() {
   const p = state.page;
   if (p === "modules") return pageModules();
+  if (p === "allergen") return pageAllergen();
   const title = { diapers: "Couches", growth: "Croissance", firsts: "Premières de bébé", pump: "Tire-lait" }[p];
   const body = p === "diapers" ? pageDiapers() : p === "growth" ? pageGrowth() : p === "pump" ? pagePump() : pageFirsts();
   const mod = { diapers: "couches", growth: "croissance", firsts: "premieres", pump: "tirelait" }[p];
@@ -986,7 +992,7 @@ function renderSheet() {
   if (!el || !state.sheet) return;
   const t = state.sheet.type;
   const body = t === "feed" ? sheetFeed() : t === "diaper" ? sheetDiaper() : t === "growth" ? sheetGrowth() : t === "first" ? sheetFirst()
-    : t === "nursing" ? sheetNursing() : t === "pump" ? sheetPump() : t === "feedChoice" ? sheetFeedChoice()
+    : t === "nursing" ? sheetNursing() : t === "pump" ? sheetPump() : t === "allergen" ? sheetAllergen() : t === "feedChoice" ? sheetFeedChoice()
     : t === "babies" ? sheetBabies() : sheetNewBaby();
   const form = FORM_SHEETS.has(t);
   el.classList.toggle("form-sheet", form);
@@ -1054,7 +1060,7 @@ function wheelShow(date, smooth = false) {
 /** Lit la roulette (appelé quand le défilement s'arrête). Le futur est refusé : retour à maintenant. */
 function wheelRead() {
   const wheel = $("#wheel"), s = state.sheet;
-  if (!wheel || wheel.hidden || !["feed", "diaper", "nursing", "pump"].includes(s?.type)) return;
+  if (!wheel || wheel.hidden || !["feed", "diaper", "nursing", "pump", "allergen"].includes(s?.type)) return;
   const span = Number(wheel.dataset.span), now = new Date();
   const d = addDays(startOfDay(now), -(span - 1 - wheelIndex(wheelCol("jour"))));
   d.setHours(wheelIndex(wheelCol("heure")), wheelIndex(wheelCol("minute")), 0, 0);
@@ -1192,7 +1198,7 @@ function commitFeed(feed) {
 // Même gabarit que la fiche « boire » : bandeau aux couleurs du module, une
 // ligne par champ. La photo (facultative) est réduite sur l'appareil ; dans la
 // fiche, `photo` vaut undefined (inchangée), null (retirée) ou l'image.
-const FORM_SHEETS = new Set(["feed", "diaper", "growth", "first", "nursing", "pump"]);
+const FORM_SHEETS = new Set(["feed", "diaper", "growth", "first", "nursing", "pump", "allergen"]);
 const sheetBand = (title) => `<div class="sheet-band">
       <button class="band-btn" data-action="close-sheet" aria-label="Fermer">${icon("x")}</button>
       <h2>${title}</h2>
@@ -1341,6 +1347,7 @@ function saveSheet() {
   if (t === "first") return saveFirst();
   if (t === "nursing") return saveNursing();
   if (t === "pump") return savePump();
+  if (t === "allergen") return saveAllergen();
 }
 function deleteSheet() {
   const s = state.sheet;
@@ -1350,7 +1357,7 @@ function deleteSheet() {
     $('[data-action="delete-sheet"]').innerHTML = `${icon("trash")} Toucher encore pour supprimer`;
     return;
   }
-  const table = { diaper: "diapers", growth: "growth", first: "firsts", nursing: "nursings", pump: "pumpings" }[s.type];
+  const table = { diaper: "diapers", growth: "growth", first: "firsts", nursing: "nursings", pump: "pumpings", allergen: "allergen_exposures" }[s.type];
   const existing = state[table].find((r) => r.id === s.id);
   if (existing) commitRow(table, { ...existing, deleted_at: new Date().toISOString() });
   closeSheet();
@@ -1402,7 +1409,7 @@ async function loadPhotos() {
   if (loadingPhotos) return;
   loadingPhotos = true;
   try {
-    for (const table of ["growth", "firsts"]) {
+    for (const table of ["growth", "firsts", "allergen_exposures"]) {
       const want = state[table].filter((r) => r.has_photo && Date.parse(photos.version(r.id) || 0) !== Date.parse(r.updated_at)).map((r) => r.id);
       for (let i = 0; i < want.length; i += 8) {
         const { data, error } = await supabase.from(table).select("id,photo,updated_at").in("id", want.slice(i, i + 8));
@@ -1626,6 +1633,217 @@ function savePump() {
   toast(s.id ? "Séance modifiée" : `Séance ajoutée · ${amount(amount_ml)}`, { kind: "ok" });
 }
 
+// --------------------------------------------------------------- allergènes ---
+// Introduction des allergènes prioritaires (guide d'Allergies Québec, avril 2024).
+// Une seule sorte d'entrée, l'« exposition » ; l'état de chaque allergène en est
+// déduit ici, jamais gardé en base. Noix, poissons et fruits de mer s'introduisent
+// une variété à la fois : leurs clés sont « famille:variété » (« noix:cajou »).
+const AL_TOLERATED = 3;       // expositions sans réaction avant de dire « toléré »
+const AL_WEEK = 7;            // à redonner au moins une fois par semaine
+const ALLERGENS = [
+  { id: "arachide", label: "Arachide" },
+  { id: "oeuf", label: "Œuf" },
+  { id: "lait", label: "Lait", full: "Lait de vache" },
+  { id: "ble", label: "Blé" },
+  { id: "soya", label: "Soya" },
+  { id: "sesame", label: "Sésame" },
+  { id: "moutarde", label: "Moutarde" },
+  { id: "noix", label: "Noix", kinds: { amande: "Amande", cajou: "Cajou", noisette: "Noisette", pacane: "Pacane", pistache: "Pistache", grenoble: "Grenoble" } },
+  { id: "poisson", label: "Poisson", kinds: { saumon: "Saumon", truite: "Truite", morue: "Morue", thon: "Thon", aiglefin: "Aiglefin" } },
+  { id: "fruitsdemer", label: "Fruits de mer", kinds: { crevette: "Crevette", homard: "Homard", crabe: "Crabe", petoncle: "Pétoncle" } },
+];
+const REACTIONS = { none: "Aucune", mild: "Légère", severe: "Importante" };
+const SYMPTOMS = { urticaire: "Urticaire", vomissement: "Vomissement", comportement: "Comportement", respiration: "Toux / respiration", enflure: "Enflure lèvres-gorge", autre: "Autre" };
+const alDef = (key) => ALLERGENS.find((a) => a.id === String(key).split(":")[0]) || null;
+function alLabel(key, full = false) {
+  const [, kind] = String(key).split(":"), def = alDef(key);
+  if (kind) return def?.kinds?.[kind] || capitalize(kind);
+  return def ? (full && def.full) || def.label : capitalize(String(key));
+}
+
+/** L'état de chaque clé, en rejouant les expositions de la plus vieille à la plus
+ *  récente. Une réaction est imputée à ce qui n'était pas encore toléré ce jour-là
+ *  (le beurre d'arachide, pas la rôtie) ; si tout l'était, à tout. Une réaction reste marquée. */
+function allergenStats(exceptId = null) {
+  const stats = new Map(), now = new Date();
+  const get = (key) => { if (!stats.has(key)) stats.set(key, { key, count: 0, reaction: null, last: null, rows: [] }); return stats.get(key); };
+  const rows = sortBy(ofBaby("allergen_exposures"), "given_at").reverse();
+  for (const e of rows) {
+    if (e.id === exceptId || new Date(e.given_at) > now) continue;
+    const keys = (e.allergens || []).filter(Boolean), bad = e.reaction && e.reaction !== "none";
+    const suspects = bad ? keys.filter((k) => alStatus(stats.get(k)) !== "ok") : [];
+    for (const k of keys) {
+      const st = get(k);
+      if (bad && (!suspects.length || suspects.includes(k))) st.reaction = e; else st.count++;
+      st.last = e.given_at; st.rows.unshift(e);
+    }
+  }
+  return stats;
+}
+const alStatus = (st) => (!st ? "new" : st.reaction ? "reaction" : st.count >= AL_TOLERATED ? "ok" : st.count ? "trying" : "new");
+const familyStats = (def, stats) => [...stats.values()].filter((st) => st.key.startsWith(def.id + ":"));
+
+/** Pastille : pointillé (pas introduit), chiffre (en cours), crochet (toléré), triangle (réaction).
+ *  Pour une famille : la variété la plus avancée, et le nombre de variétés tolérées en coin. */
+function alBadge(def, stats) {
+  if (!def.kinds) { const st = stats.get(def.id), status = alStatus(st); return { status, count: st?.count || 0, extra: 0 }; }
+  const kinds = familyStats(def, stats), ok = kinds.filter((st) => alStatus(st) === "ok").length;
+  const status = kinds.some((st) => st.reaction) ? "reaction" : ok ? "ok" : kinds.some((st) => st.count) ? "trying" : "new";
+  return { status, count: Math.max(0, ...kinds.map((st) => st.count)), extra: ok > 1 ? ok : 0 };
+}
+function alDot(b) {
+  const inner = b.status === "ok" ? icon("check") : b.status === "reaction" ? icon("alert") : b.status === "trying" ? b.count : "";
+  return `<b class="al-dot ${b.status}">${inner}${b.extra ? `<i>${b.extra}</i>` : ""}</b>`;
+}
+const agoDays = (n) => (n <= 0 ? "aujourd'hui" : n === 1 ? "hier" : `il y a ${n} jours`);
+
+function homeAllergens() {
+  const stats = allergenStats(), now = new Date();
+  const grid = ALLERGENS.map((def) => `<button class="al" data-action="open-allergen" data-key="${def.id}">${alDot(alBadge(def, stats))}<span>${def.label}</span></button>`).join("");
+  // Le toléré redonné il y a le plus longtemps : un constat, pas un rappel.
+  const oldest = [...stats.values()].filter((st) => alStatus(st) === "ok").sort((a, b) => (a.last < b.last ? -1 : 1))[0];
+  const days = oldest ? daysAgo(new Date(oldest.last), now) : 0;
+  const line = oldest ? `<button class="al-line" data-action="open-allergen" data-key="${esc(oldest.key.split(":")[0])}">
+      <span>${esc(alLabel(oldest.key))}</span><span class="al-ago ${days > AL_WEEK ? "late" : ""}">${agoDays(days)}</span></button>` : "";
+  return moduleCard("allergenes", "Allergènes", "Ajouter un allergène", `<div class="al-grid home">${grid}</div>${line}`, null);
+}
+
+function exposureRow(e, def, stats) {
+  const bad = e.reaction && e.reaction !== "none", who = caregiver(e.caregiver_id), photo = e.has_photo ? photos.get(e.id) : null;
+  const unsent = queue.all().some((q) => q.id === e.id);
+  // La réaction de cette entrée est-elle imputée à cet allergène-ci (et non à un autre de la même bouchée) ?
+  const blamed = bad && [...stats.values()].some((st) => st.reaction?.id === e.id && alDef(st.key)?.id === def.id);
+  const labels = def.kinds || (e.allergens || []).length > 1 ? e.allergens.map((k) => alLabel(k)).join(", ") : "";
+  const sub = [bad ? [REACTIONS[e.reaction], ...(e.symptoms || []).map((x) => SYMPTOMS[x] || x)].join(" · ") : "", labels, e.food || ""].filter(Boolean);
+  return `<button class="feed-row al-row" data-action="edit-allergenes" data-id="${e.id}">
+      <i class="al-mark ${blamed ? "bad" : ""}"></i>
+      <span class="feed-main"><span class="feed-time">${esc(fr(new Date(e.given_at), { day: "numeric", month: "short" }))} · ${fmtTime(e.given_at)}${who ? ` <span class="meta">· ${esc(who.name)}</span>` : ""}${unsent ? ` <span class="unsent" title="Pas encore envoyé">${icon("cloudUp")}</span>` : ""}</span>
+        ${sub.length ? `<span class="meta ${blamed ? "bad" : ""}">${esc(sub.join(" · "))}</span>` : ""}</span>
+      ${photo ? `<img src="${esc(photo)}" alt="" class="photo-thumb">` : ""}
+      <span class="chev">${icon("right")}</span></button>`;
+}
+
+/** Détail d'un allergène : son état, ses variétés (familles), puis ses expositions. */
+function pageAllergen() {
+  const def = alDef(state.allergen) || ALLERGENS[0], stats = allergenStats(), now = new Date();
+  const banner = (st) => {
+    const status = alStatus(st);
+    if (status === "reaction") return `<p class="al-state bad">Réaction ${st.reaction.reaction === "severe" ? "importante" : "légère"} · ${esc(fr(new Date(st.reaction.given_at), { day: "numeric", month: "short" }))}</p>`;
+    if (status === "ok") return `<p class="al-state">Toléré · ${st.count} fois · ${agoDays(daysAgo(new Date(st.last), now))}</p>`;
+    if (status === "trying") return `<p class="al-state soft">${st.count} sur ${AL_TOLERATED}</p>`;
+    return "";
+  };
+  let top, rows;
+  if (def.kinds) {
+    const kinds = familyStats(def, stats).sort((a, b) => (a.last < b.last ? 1 : -1));
+    top = kinds.length ? `<div class="card list al-kinds">${kinds.map((st) => `<div class="al-kind">${alDot({ status: alStatus(st), count: st.count, extra: 0 })}
+        <span class="al-kind-name">${esc(alLabel(st.key))}</span><span class="meta">${agoDays(daysAgo(new Date(st.last), now))}</span></div>`).join("")}</div>` : "";
+    const seen = new Set(); rows = [];
+    for (const st of kinds) for (const e of st.rows) if (!seen.has(e.id)) { seen.add(e.id); rows.push(e); }
+    rows = sortBy(rows, "given_at");
+  } else {
+    top = banner(stats.get(def.id));
+    rows = stats.get(def.id)?.rows || [];
+  }
+  return `<div class="page-head allergenes">
+      <button class="back" data-action="close-page" aria-label="Retour">${icon("left")}</button>
+      <h2>${def.full || def.label}</h2>
+      <button class="page-add" data-action="add-allergenes" aria-label="Ajouter">${icon("plus")}</button>
+    </div>${top}
+    ${rows.length ? `<div class="card list">${rows.map((e) => exposureRow(e, def, stats)).join("")}</div>` : `<div class="empty">Pas encore introduit.</div>`}`;
+}
+
+function openAllergenSheet(row, preset = null) {
+  const def = preset ? alDef(preset) : null;
+  const keys = row ? [...(row.allergens || [])] : def && !def.kinds ? [def.id] : [];
+  const fam = def?.kinds ? def.id : keys.map((k) => k.split(":")).find((x) => x[1])?.[0] || null;
+  openSheet({ type: "allergen", id: row?.id || null, time: row ? new Date(row.given_at) : null, keys, family: fam, custom: false,
+    food: row?.food || "", reaction: row?.reaction || "none", symptoms: [...(row?.symptoms || [])],
+    hasPhoto: !!row?.has_photo, photo: undefined, confirmDelete: false });
+}
+/** La fiche se redessine à chaque choix ; la roulette se referme avec elle. */
+function redrawAllergen(toEnd = false) {
+  const x = $(".al-kinds-row")?.scrollLeft || 0;
+  $("#sheet")?.classList.remove("wheel-open");
+  renderSheetKeep();
+  const row = $(".al-kinds-row"); if (row) row.scrollLeft = toEnd ? row.scrollWidth : x;      // la rangée des variétés reste où elle était
+}
+
+/** Au plus UN allergène pas encore toléré par entrée (une réaction reste attribuable) ; les tolérés se combinent. */
+function allergenPick(key) {
+  const s = state.sheet, def = alDef(key);
+  if (def?.kinds && !key.includes(":")) { s.family = s.family === key ? null : key; s.custom = false; redrawAllergen(); const row = $(".al-kinds-row"); if (row) row.scrollLeft = 0; return; }
+  s.keys = s.keys.includes(key) ? s.keys.filter((k) => k !== key) : [...s.keys, key];
+  redrawAllergen();
+}
+function allergenCustom() {
+  const s = state.sheet, name = ($("#al-custom")?.value || "").trim().toLowerCase().replace(/[:,]/g, " ").replace(/\s+/g, " ").slice(0, 30);
+  s.custom = false;
+  if (name && s.family) {
+    const known = Object.entries(alDef(s.family).kinds).find(([, l]) => l.toLowerCase() === name)?.[0];
+    const key = `${s.family}:${known || name}`;
+    if (!s.keys.includes(key)) s.keys = [...s.keys, key];
+  }
+  redrawAllergen(true);
+}
+
+function sheetAllergen() {
+  const s = state.sheet, now = new Date(), stats = allergenStats(s.id);
+  const isNew = (k) => alStatus(stats.get(k)) !== "ok";
+  const blocked = s.keys.some(isNew);           // un non-toléré est déjà choisi : les autres non-tolérés attendent
+  const off = (k) => !s.keys.includes(k) && blocked && isNew(k);
+  const grid = ALLERGENS.map((def) => {
+    const on = def.kinds ? s.keys.some((k) => k.startsWith(def.id + ":")) : s.keys.includes(def.id);
+    return `<button class="al ${on ? "sel" : ""} ${def.kinds && s.family === def.id ? "open" : ""} ${!def.kinds && off(def.id) ? "off" : ""}" data-action="al-pick" data-key="${def.id}" aria-pressed="${on}">${alDot(alBadge(def, stats))}<span>${def.label}</span></button>`;
+  }).join("");
+  const fam = s.family ? alDef(s.family) : null;
+  let kinds = "";
+  if (fam && s.custom) {
+    kinds = `<input type="text" id="al-custom" class="al-custom" placeholder="Nom" maxlength="30" autocomplete="off" autocapitalize="off" enterkeyhint="done">
+      <button class="pill small mint on" data-action="al-custom-ok">OK</button>`;
+  } else if (fam) {
+    // Les variétés déjà données d'abord (la rangée défile), puis les suggestions ; l'ordre ne change pas quand on en touche une.
+    const keys = [...new Set([...familyStats(fam, stats).map((st) => st.key), ...Object.keys(fam.kinds).map((k) => `${fam.id}:${k}`), ...s.keys.filter((k) => k.startsWith(fam.id + ":"))])];
+    kinds = keys.map((k) => `<button class="pill small mint ${s.keys.includes(k) ? "on" : ""} ${alStatus(stats.get(k))} ${off(k) ? "off" : ""}" data-action="al-pick" data-key="${esc(k)}" aria-pressed="${s.keys.includes(k)}">${esc(alLabel(k))}</button>`).join("")
+      + `<button class="pill small" data-action="al-custom">Autre…</button>`;
+  }
+  const bad = s.reaction !== "none";
+  const cur = s.photo === undefined ? (s.id && s.hasPhoto ? photos.get(s.id) : null) : s.photo;
+  return `${sheetBand(s.id ? "Modifier" : "Allergène")}
+    <div class="al-grid">${grid}</div>
+    <div class="al-kinds-row ${fam ? "" : "hidden"}">${kinds}</div>
+    <button class="form-row" id="feed-when-row" data-action="toggle-wheel" aria-label="Changer l'heure">
+      <span class="row-label">Heure</span>
+      <span class="row-value" id="feed-time-label">${esc(timeLabel(s.time))}</span>
+    </button>
+    ${wheelHtml(s.time || now, now)}
+    <label class="form-row">
+      <span class="row-label">Aliment</span>
+      <input type="text" id="al-food" class="row-input" placeholder="Ajouter" value="${esc(s.food)}" maxlength="120" autocomplete="off" enterkeyhint="done">
+    </label>
+    <div class="segmented in-sheet mint">${Object.entries(REACTIONS).map(([k, l]) => `<button class="${s.reaction === k ? "on" : ""} ${k !== "none" ? "bad" : ""}" data-action="al-reaction" data-reaction="${k}">${k === "none" ? "Aucune réaction" : l}</button>`).join("")}</div>
+    <div class="al-symptoms ${bad ? "" : "hidden"}">
+      ${Object.entries(SYMPTOMS).map(([k, l]) => `<button class="pill small rosy ${s.symptoms.includes(k) ? "on" : ""}" data-action="al-symptom" data-symptom="${k}" aria-pressed="${s.symptoms.includes(k)}">${l}</button>`).join("")}
+      <label class="pill small rosy photo ${cur ? "on" : ""}">${icon("camera")} Photo<input type="file" accept="image/*" data-change="sheet-photo" aria-label="Choisir une photo"></label>
+      ${cur ? `<button class="pill small" data-action="sheet-photo-remove">Retirer la photo</button>` : ""}
+    </div>
+    ${deleteFoot(s, "cette entrée")}`;
+}
+function saveAllergen() {
+  const s = state.sheet, when = s.time || new Date();
+  if (!s.keys.length) { toast(s.family ? "Choisis une variété" : "Choisis un allergène"); return; }
+  if (when.getTime() > Date.now() + 2 * 60000) { toast("L'heure est dans le futur"); return; }
+  const bad = s.reaction !== "none";
+  const existing = s.id ? state.allergen_exposures.find((r) => r.id === s.id) : null;
+  const row = { id: s.id || uuid(), baby_id: state.babyId, given_at: when.toISOString(), allergens: s.keys, food: $("#al-food")?.value.trim() || null,
+    reaction: s.reaction, symptoms: bad ? s.symptoms : [], caregiver_id: existing ? existing.caregiver_id : me()?.id || null, deleted_at: null };
+  if (!bad && (s.hasPhoto || s.photo)) row.photo = null;          // plus de réaction : plus de photo
+  else if (s.photo !== undefined) row.photo = s.photo;
+  commitRow("allergen_exposures", row);
+  closeSheet();
+  toast(s.id ? "Entrée modifiée" : s.keys.map((k) => alLabel(k)).join(", "), { kind: "ok" });
+}
+
 // ------------------------------------------------------------ choix du bébé ---
 function sheetBabies() {
   return `<h2>Mes bébés</h2>
@@ -1656,7 +1874,7 @@ function saveSnapshot() {
   snapshot.save({
     userId: state.user.id, email: state.user.email, babies: state.babies, caregivers: state.caregivers,
     feeds: state.feeds, diapers: state.diapers, growth: state.growth, firsts: state.firsts,
-    nursings: state.nursings, pumpings: state.pumpings, older: state.older, syncedAt: state.syncedAt,
+    nursings: state.nursings, pumpings: state.pumpings, allergen_exposures: state.allergen_exposures, older: state.older, syncedAt: state.syncedAt,
   });
 }
 
@@ -1671,6 +1889,7 @@ function showSnapshot() {
   state.firsts = stripPhotos(applyQueue(snap.firsts || [], "firsts"));
   state.nursings = applyQueue(snap.nursings || [], "nursings");
   state.pumpings = stripPhotos(applyQueue(snap.pumpings || [], "pumpings"));
+  state.allergen_exposures = stripPhotos(applyQueue(snap.allergen_exposures || [], "allergen_exposures"));
   state.older = snap.older || {};
   state.syncedAt = snap.syncedAt || null;
   if (!state.user.email && snap.email) state.user = { ...state.user, email: snap.email };
@@ -1742,7 +1961,7 @@ function loadAll(preferBabyId = null) {
   loading ||= (async () => {
     try {
       const since = new Date(Date.now() - HISTORY_DAYS * DAY).toISOString();
-      const [b, c, feeds, older, diapers, growth, firsts, nursings, pumpings] = await Promise.all([
+      const [b, c, feeds, older, diapers, growth, firsts, nursings, pumpings, exposures] = await Promise.all([
         supabase.from("babies").select("*").order("created_at"),
         supabase.from("caregivers").select("*").order("created_at"),
         fetchFeeds(since),
@@ -1752,6 +1971,7 @@ function loadAll(preferBabyId = null) {
         fetchFeeds("1900-01-01", "firsts", "happened_on", FIRSTS_COLS),
         fetchFeeds(since, "nursings"),
         fetchFeeds(since, "pumpings", "started_at", PUMP_COLS),
+        fetchFeeds("1900-01-01", "allergen_exposures", "given_at", ALLERGEN_COLS),   // tout l'historique : l'état d'un allergène en dépend
       ]);
       if (b.error) throw b.error;
       if (c.error) throw c.error;
@@ -1769,6 +1989,7 @@ function loadAll(preferBabyId = null) {
       state.firsts = stripPhotos(applyQueue(firsts, "firsts"));
       state.nursings = applyQueue(nursings, "nursings");
       state.pumpings = stripPhotos(applyQueue(pumpings, "pumpings"));
+      state.allergen_exposures = stripPhotos(applyQueue(exposures, "allergen_exposures"));
       if (older) state.older = older;
       state.syncedAt = Date.now();
       state.offlineData = false; state.online = true;
@@ -1837,6 +2058,7 @@ function subscribeRealtime() {
     .on("postgres_changes", { event: "*", schema: "public", table: "firsts" }, scheduleReload)
     .on("postgres_changes", { event: "*", schema: "public", table: "nursings" }, (p) => onRowChange("nursings", p))
     .on("postgres_changes", { event: "*", schema: "public", table: "pumpings" }, scheduleReload)
+    .on("postgres_changes", { event: "*", schema: "public", table: "allergen_exposures" }, scheduleReload)
     .on("postgres_changes", { event: "*", schema: "public", table: "babies" }, scheduleReload)
     .on("postgres_changes", { event: "*", schema: "public", table: "caregivers" }, scheduleReload)
     .subscribe((status) => {
@@ -2036,7 +2258,7 @@ async function signOut() {
 function resetToSignedOut() {
   snapshot.clear(); queue.clear(); photos.clear();
   timerMemory.clear("nursing"); timerMemory.clear("pump");
-  Object.assign(state, { user: null, babies: [], caregivers: [], feeds: [], diapers: [], growth: [], firsts: [], nursings: [], pumpings: [], older: {}, babyId: null, pending: 0, offlineData: false, syncedAt: null, tab: "home", page: null, modulesDraft: null });
+  Object.assign(state, { user: null, babies: [], caregivers: [], feeds: [], diapers: [], growth: [], firsts: [], nursings: [], pumpings: [], allergen_exposures: [], older: {}, babyId: null, pending: 0, offlineData: false, syncedAt: null, tab: "home", page: null, modulesDraft: null });
   if (state.sheet) closeSheet();
   render("auth");
 }
@@ -2120,6 +2342,21 @@ document.addEventListener("click", async (e) => {
     case "pump-manual": state.sheet.manual = true; state.sheet.minutes = Math.ceil(timerSeconds(timerOf("pump"), "all") / 60); return renderSheetKeep();
     case "pump-mode": state.sheet.mode = btn.dataset.mode; return renderSheetKeep();
     case "pump-abandon": timerMemory.clear("pump"); closeSheet(); renderMain(); return toast("Séance abandonnée");
+
+    // allergènes
+    case "add-allergenes": return openAllergenSheet(null, state.page === "allergen" ? state.allergen : null);
+    case "edit-allergenes": { const x = state.allergen_exposures.find((r) => r.id === btn.dataset.id); if (x) openAllergenSheet(x); return; }
+    case "open-allergen": state.page = "allergen"; state.allergen = btn.dataset.key; renderApp(); window.scrollTo(0, 0); return;
+    case "al-pick": return allergenPick(btn.dataset.key);
+    case "al-custom": state.sheet.custom = true; redrawAllergen(); return $("#al-custom")?.focus({ preventScroll: true });
+    case "al-custom-ok": return allergenCustom();
+    case "al-reaction": state.sheet.reaction = btn.dataset.reaction; return redrawAllergen();
+    case "al-symptom": {
+      const k = btn.dataset.symptom, cur = state.sheet.symptoms;
+      state.sheet.symptoms = cur.includes(k) ? cur.filter((x) => x !== k) : [...cur, k];
+      btn.classList.toggle("on"); btn.setAttribute("aria-pressed", state.sheet.symptoms.includes(k));
+      return;
+    }
     case "draft-nursing": state.modulesDraft.nursing = !state.modulesDraft.nursing; return renderMain();
     case "draft-bottle": state.modulesDraft.bottle = !state.modulesDraft.bottle; return renderMain();
     case "edit-feed": { const f = state.feeds.find((x) => x.id === btn.dataset.id); if (f) openFeedSheet(f); return; }
@@ -2178,6 +2415,7 @@ function renderSheetKeep() {
   for (const el of document.querySelectorAll("#sheet input:not([type=file]), #sheet textarea")) keep[el.id] = el.value;
   if (s.type === "growth") { s.weight = keep["g-weight"] ?? s.weight; s.weightOz = keep["g-weight-oz"] ?? s.weightOz; s.height = keep["g-height"] ?? s.height; s.head = keep["g-head"] ?? s.head; }
   if (s.type === "first") s.title = keep["sheet-title"] ?? s.title;
+  if (s.type === "allergen" && "al-food" in keep) s.food = keep["al-food"];
   if (s.type === "pump") { if ("p-left" in keep) s.left = keep["p-left"]; if ("p-right" in keep) s.right = keep["p-right"]; if ("p-total" in keep) s.total = keep["p-total"]; if ("p-minutes" in keep) s.minutes = keep["p-minutes"]; }
   if (s.type === "nursing") { if ("n-left" in keep) s.left = keep["n-left"]; if ("n-right" in keep) s.right = keep["n-right"]; }
   if ("sheet-note" in keep) s.note = keep["sheet-note"];
@@ -2241,6 +2479,8 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && state.sheet) closeSheet();
   if (e.key === "Enter" && e.target?.id === "feed-amount") saveFeed();
   if (e.key === "Enter" && e.target?.id === "sheet-title") saveFirst();
+  if (e.key === "Enter" && e.target?.id === "al-custom") allergenCustom();
+  if (e.key === "Enter" && e.target?.id === "al-food") e.target.blur();
 });
 
 // =============================================================== DÉMARRAGE ===

@@ -18,12 +18,13 @@
   if (fresh) ["kenda.queue.v1", "kenda.snapshot.v1", "kenda.baby.v1"].forEach((k) => localStorage.removeItem(k));
   let db = fresh ? null : JSON.parse(localStorage.getItem(DB_KEY) || "null");
   if (!db) { db = seed(fresh); save(); }
+  db.allergen_exposures ||= [];          // base d'essai créée avant le module Allergènes
   if (fresh) history.replaceState(null, "", location.pathname);
   function save() { localStorage.setItem(DB_KEY, JSON.stringify(db)); }
   function iso(ms) { return new Date(ms).toISOString(); }
 
   function seed(mode) {
-    const d = { users: [], babies: [], caregivers: [], feeds: [], diapers: [], growth: [], firsts: [], nursings: [], pumpings: [] };
+    const d = { users: [], babies: [], caregivers: [], feeds: [], diapers: [], growth: [], firsts: [], nursings: [], pumpings: [], allergen_exposures: [] };
     const u = { id: uuid(), email: "maxime@test.local", password: "secret1" };
     const u2 = { id: uuid(), email: "julie@test.local", password: "secret1" };
     d.users.push(u, u2);
@@ -97,6 +98,14 @@
         d.firsts.push({ id: uuid(), baby_id: b.id, happened_on: on.toISOString().slice(0, 10), title, note: age === 70 ? "De 22 h à 4 h, sans se réveiller !" : null,
           photo: null, caregiver_id: jul.id, created_at: iso(on), updated_at: iso(on), deleted_at: null });
       });
+      // Allergènes : tolérés (3+), en cours, une réaction, une famille à variétés, et un œuf pas redonné depuis 9 jours.
+      [["arachide", [20, 17, 12, 2], "beurre d'arachide délayé"], ["oeuf", [19, 15, 9], "œuf cuit dur écrasé"], ["ble", [18, 14, 10, 3], "céréales de blé"],
+        ["soya", [6, 3], "tofu soyeux"], ["sesame", [4], "tahini dans une purée"], ["poisson:saumon", [16, 11, 5], "saumon écrasé"], ["poisson:truite", [1], "truite"],
+        ["noix:cajou", [7, 2], "beurre de cajou"], ["lait", [14, 11, 8], "yogourt nature"]].forEach(([key, days, food]) => days.forEach((ago, i) => {
+        const at = now - ago * DAY - 3 * 3600000, bad = key === "lait" && i === days.length - 1;
+        d.allergen_exposures.push({ id: uuid(), baby_id: b.id, given_at: iso(at), allergens: [key], food, reaction: bad ? "mild" : "none", symptoms: bad ? ["urticaire"] : [],
+          photo: null, caregiver_id: (i % 2 ? jul : max).id, created_at: iso(at), updated_at: iso(at), deleted_at: null });
+      }));
       return b;
     }
     baby("Kenda", "KND42", [2.5, 6, 9.25, 12.5, 15.75, 19, 22.25], 110, ["formule", "formule", "maternel"]);
@@ -151,7 +160,7 @@
         const p = this.payload;
         if (!myBabyIds().includes(p.baby_id)) return { data: null, error: { message: "new row violates row-level security policy", code: "42501" } };
         if (this.table === "feeds" && !(p.amount_ml > 0 && p.amount_ml <= 1000)) return { data: null, error: { message: "check constraint", code: "23514" } };
-        if (["diapers", "growth", "firsts", "nursings", "pumpings"].includes(this.table) && !("baby_id" in p)) return { data: null, error: { message: "null value", code: "23502" } };
+        if (["diapers", "growth", "firsts", "nursings", "pumpings", "allergen_exposures"].includes(this.table) && !("baby_id" in p)) return { data: null, error: { message: "null value", code: "23502" } };
         let row = rows.find((r) => this.conflict.every((k) => r[k] === p[k]));
         if (row) {
           // Le déclencheur feeds_keep_latest : une version plus vieille est ignorée.

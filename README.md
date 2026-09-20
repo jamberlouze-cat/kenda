@@ -136,6 +136,12 @@ Ouvre l'adresse dans **Safari** → **Partager** → **Sur l'écran d'accueil**.
   tétées se mêlent aux boires (accueil, journal, calendrier), sans quantité.
 - **Tire-lait** (module, rose) : Gauche/Droite ou Total, minuteur, heure de
   début, quantités, note, photo. Historique par jour avec total.
+- **Allergènes** (module, menthe) : introduction des 10 allergènes prioritaires, d'après le guide
+  d'Allergies Québec (avril 2024). Une seule sorte d'entrée, l'exposition (table `allergen_exposures`) ;
+  l'état de chaque allergène est calculé par l'app : pas introduit → en cours → toléré après 3 expositions
+  sans réaction → réaction (reste marquée). Noix, poissons et fruits de mer se suivent une variété à la
+  fois (clés `noix:cajou`). Au plus un allergène non toléré par entrée ; les tolérés se combinent.
+  L'accueil montre le toléré redonné il y a le plus longtemps (orangé après 7 jours). Aucun conseil médical.
 - **Photos** des mesures, des premières et des séances de tire-lait : réduites à 640 px sur l'appareil,
   gardées dans la base, mais pas dans l'instantané localStorage (trop petit) :
   copie dans IndexedDB (`lib/photos.js`), chargée à part de la liste.
