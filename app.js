@@ -202,6 +202,17 @@ function resetScroll() {
   window.scrollTo(0, 0);
   setTimeout(() => { if (!state.sheet) window.scrollTo(0, window.scrollY > 0 && document.documentElement.scrollHeight <= window.innerHeight + 1 ? 0 : window.scrollY); }, 350);
 }
+// Une page s'ouvre par-dessus un onglet : on retient la hauteur de l'onglet
+// pour y revenir telle quelle au retour.
+let pageScrollY = 0;
+function rememberScroll() { if (!state.page) pageScrollY = window.scrollY; }
+function restoreScroll() {
+  const y = pageScrollY; let tries = 0;
+  window.scrollTo(0, y);
+  // Si la page n'a pas encore toute sa hauteur (images), on réessaie un instant.
+  const again = () => { if (state.page || window.scrollY >= y - 2 || ++tries > 20) return; window.scrollTo(0, y); requestAnimationFrame(again); };
+  requestAnimationFrame(again);
+}
 // Le clavier se referme : si la page n'a rien à faire défiler, iOS peut la
 // laisser décalée quand même. On la remet en place.
 document.addEventListener("focusout", () => setTimeout(() => {
@@ -585,6 +596,7 @@ function pageGrowth() {
 
 // ------------------------------------------------------- gérer les modules ---
 function openModules() {
+  rememberScroll();
   state.modulesDraft = { list: moduleList().map((m) => ({ ...m })), kinds: [...enabledKinds()], nursing: nursingOn(), bottle: bottleOn() };
   state.page = "modules"; renderApp(); window.scrollTo(0, 0);
 }
@@ -673,6 +685,7 @@ function saveModules() {
   const kinds = d.kinds.length ? Object.keys(KINDS).filter((k) => d.kinds.includes(k)) : enabledKinds();
   state.page = null; state.modulesDraft = null;
   updateBaby({ modules: d.list.map(({ id, on }) => (id === "biberon" ? { id, on, bottle: d.bottle } : { id, on })), kinds, nursing: d.nursing }, "Modules enregistrés");
+  restoreScroll();
 }
 
 // --------------------------------------------------------------- historique ---
@@ -2328,9 +2341,10 @@ document.addEventListener("click", async (e) => {
       state.tab = btn.dataset.tab; state.page = null; state.modulesDraft = null; renderApp(); window.scrollTo(0, 0); return;
     case "open-page":
       if (btn.dataset.page === "modules") return openModules();
+      rememberScroll();
       state.page = btn.dataset.page; if (btn.dataset.measure) state.measure = btn.dataset.measure;
       renderApp(); window.scrollTo(0, 0); return;
-    case "close-page": state.page = null; state.modulesDraft = null; renderApp(); window.scrollTo(0, 0); return;
+    case "close-page": state.page = null; state.modulesDraft = null; renderApp(); restoreScroll(); return;
     case "measure": state.measure = btn.dataset.measure; state.growthSel = null; return renderMain();
     case "growth-point": state.growthSel = btn.dataset.id; return renderMain();
 
@@ -2392,7 +2406,7 @@ document.addEventListener("click", async (e) => {
     // allergènes
     case "add-allergenes": return openAllergenSheet(null, state.page === "allergen" ? state.allergen : null);
     case "edit-allergenes": { const x = state.allergen_exposures.find((r) => r.id === btn.dataset.id); if (x) openAllergenSheet(x); return; }
-    case "open-allergen": state.page = "allergen"; state.allergen = btn.dataset.key; renderApp(); window.scrollTo(0, 0); return;
+    case "open-allergen": rememberScroll(); state.page = "allergen"; state.allergen = btn.dataset.key; renderApp(); window.scrollTo(0, 0); return;
     case "al-info": return openSheet({ type: "alInfo" });
     case "al-pick": return allergenPick(btn.dataset.key);
     case "al-custom": state.sheet.custom = true; redrawAllergen(); return $("#al-custom")?.focus({ preventScroll: true });
