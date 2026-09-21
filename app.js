@@ -7,7 +7,7 @@ import {
   formatWeight, formatLength, lbOzToG, gToLbOz, lengthToCm, cmToLength, G_PER_LB, CM_PER_IN,
 } from "./lib/growth.js";
 import {
-  fromUnit, formatAmount, startOfDay, addDays, dayKey, sortDesc,
+  ML_PER_OZ, fromUnit, formatAmount, startOfDay, addDays, dayKey, sortDesc,
   totalToday, totalLast24h, lastFeed, formatElapsed,
   groupByDay, dailySeries, comparePeriods,
   findPatterns, hourHistogram,
@@ -106,7 +106,6 @@ const ICONS = {
   right: '<path d="M9 6l6 6-6 6"/>',
   check: '<path d="M5 12l5 5 9-10"/>',
   x: '<path d="M6 6l12 12M18 6L6 18"/>',
-  backspace: '<path d="M9 6h10a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H9l-6-6z"/><path d="M13 10l4 4M17 10l-4 4"/>',
   copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
   share: '<path d="M12 3v12M8 7l4-4 4 4"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/>',
   cloudOff: '<path d="M3 3l18 18"/><path d="M9.5 6.2A6 6 0 0 1 18 11a4 4 0 0 1 2.6 6.4M17 18H7a4 4 0 0 1-.9-7.9"/>',
@@ -116,7 +115,6 @@ const ICONS = {
   trash: '<path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13"/>',
   bottle: '<path d="M10.2 5.5v-.9c0-1.3.8-2.4 1.8-2.4s1.8 1.1 1.8 2.4v.9"/><rect x="8.2" y="5.5" width="7.6" height="2.8" rx="1.2"/><path d="M9.2 8.3c-2 .9-3.4 2.7-3.4 4.8V18a3.2 3.2 0 0 0 3.2 3.2h6a3.2 3.2 0 0 0 3.2-3.2v-4.9c0-2.1-1.4-3.9-3.4-4.8"/><path d="M8.3 13.6h2.4M8.3 16.6h2.4"/>',
   baby: '<circle cx="12" cy="13" r="8"/><path d="M9.5 12.5v.01M14.5 12.5v.01"/><path d="M10 16c1.2 1 2.8 1 4 0"/><path d="M12 5c0-1.6 1.6-2.2 2.6-1.2"/>',
-  users: '<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.5"/><path d="M17 14.5c2.5 0 4 2 4 5"/>',
   logout: '<path d="M14 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2v-2"/><path d="M9 12h12M18 9l3 3-3 3"/>',
   up: '<path d="M12 19V5M6 11l6-6 6 6"/>',
   downArrow: '<path d="M12 5v14M6 13l6 6 6-6"/>',
@@ -170,7 +168,19 @@ const moduleOn = (id) => moduleList().find((m) => m.id === id)?.on !== false;
 const bottleOn = () => moduleList().find((m) => m.id === "biberon")?.bottle !== false;
 const fmtDate = (day, opts = { day: "numeric", month: "short", year: "numeric" }) => fr(parseDay(day), opts);
 const todayKey = () => dayKey(new Date());
-
+/** La ligne attend-elle encore dans la file ? La file n'est lue qu'une fois par rendu (les rendus sont synchrones). */
+let unsentIds = null;
+function isUnsent(id) {
+  if (!unsentIds) { unsentIds = new Set(queue.all().map((q) => q.id)); queueMicrotask(() => { unsentIds = null; }); }
+  return unsentIds.has(id);
+}
+const unsentMark = (id) => (isUnsent(id) ? ` <span class="unsent" title="Pas encore envoyé">${icon("cloudUp")}</span>` : "");
+/** Lignes regroupées par jour (l'ordre des lignes est gardé). */
+function groupRows(rows, col) {
+  const groups = new Map();
+  for (const r of rows) { const k = dayKey(r[col]); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r); }
+  return [...groups.values()];
+}
 
 // ================================================================== RENDU ===
 function render(view) {
@@ -235,7 +245,7 @@ function renderTotals() {
   const el = document.getElementById("totals");
   if (!el) return;
   const now = new Date(), feeds = babyFeeds(), u = unit();
-  el.hidden = !moduleOn("biberon");
+  el.hidden = !moduleOn("biberon") || (!bottleOn() && !totalLast24h(feeds, now) && !totalToday(feeds, now));
   el.innerHTML = `
     <span class="total"><span class="total-label">Aujourd'hui</span><b>${formatAmount(totalToday(feeds, now), u)}</b><small>${u}</small></span>
     <span class="total"><span class="total-label">Dernières 24 h</span><b>${formatAmount(totalLast24h(feeds, now), u)}</b><small>${u}</small></span>`;
@@ -250,9 +260,11 @@ function renderMain() {
   if (state.view !== "app" || !main) return;
   renderTotals();
   // Ne pas écraser un champ des paramètres pendant qu'on y écrit.
-  if (state.tab === "settings" && main.contains(document.activeElement) && document.activeElement.tagName === "INPUT") return;
+  if (state.tab === "settings" && main.contains(document.activeElement) && /^(INPUT|SELECT)$/.test(document.activeElement.tagName)) return;
   if (state.page === "modules" && dragging?.item.isConnected) return;
+  const strip = main.querySelector(".polaroids")?.scrollLeft || 0;      // le carrousel reste où le doigt l'a laissé
   main.innerHTML = state.page ? viewPage() : state.tab === "history" ? viewHistory() : state.tab === "settings" ? viewSettings() : viewHome();
+  if (strip) { const el = main.querySelector(".polaroids"); if (el) el.scrollLeft = strip; }
 }
 
 // ------------------------------------------------------------------ accueil ---
@@ -260,23 +272,21 @@ function renderMain() {
 function feedRow(f, max) {
   const who = caregiver(f.caregiver_id);
   if (f._nursing) {
-    const unsentN = queue.all().some((q) => q.id === f.id);
     return `
     <button class="feed-row" data-action="edit-nursing" data-id="${f.id}">
       <span class="feed-main">
-        <span class="feed-time">${fmtTime(f.started_at)} <span class="feed-kind">Allaitement</span>${who ? ` <span class="meta">· ${esc(who.name)}</span>` : ""}${unsentN ? ` <span class="unsent" title="Pas encore envoyé">${icon("cloudUp")}</span>` : ""}</span>
+        <span class="feed-time">${fmtTime(f.started_at)} <span class="feed-kind">Allaitement</span>${who ? ` <span class="meta">· ${esc(who.name)}</span>` : ""}${unsentMark(f.id)}</span>
         <span class="feed-bar-line"><span class="meta">${esc(nursingSummary(f))}${f.last_side ? ` · dernier : ${SIDE[f.last_side].toLowerCase()}` : ""}</span></span>
       </span>
       <span class="chev">${icon("right")}</span>
     </button>`;
   }
   const showKind = enabledKinds().length > 1 || f.kind !== enabledKinds()[0];
-  const unsent = queue.all().some((q) => q.id === f.id);
   const width = Math.max(8, Math.round((Number(f.amount_ml) / (max || Number(f.amount_ml))) * 100));
   return `
     <button class="feed-row" data-action="edit-feed" data-id="${f.id}">
       <span class="feed-main">
-        <span class="feed-time">${fmtTime(f.started_at)}${showKind ? ` <span class="feed-kind">${KIND_SHORT[f.kind]}</span>` : ""}${who ? ` <span class="meta">· ${esc(who.name)}</span>` : ""}${unsent ? ` <span class="unsent" title="Pas encore envoyé">${icon("cloudUp")}</span>` : ""}</span>
+        <span class="feed-time">${fmtTime(f.started_at)}${showKind ? ` <span class="feed-kind">${KIND_SHORT[f.kind]}</span>` : ""}${who ? ` <span class="meta">· ${esc(who.name)}</span>` : ""}${unsentMark(f.id)}</span>
         <span class="feed-bar-line"><span class="feed-bar-zone"><span class="feed-bar ${f.kind}" style="width:${width}%"></span></span>
           <span class="feed-amount">${formatAmount(f.amount_ml, unit())}<small> ${unit()}</small></span></span>
       </span>
@@ -291,7 +301,7 @@ function feedEvents() {
   return sortDesc([...babyFeeds(), ...nursings]);
 }
 function homeFeeds() {
-  const now = new Date(), feeds = babyFeeds(), baby = currentBaby();
+  const now = new Date(), baby = currentBaby();
   const events = feedEvents().filter((f) => new Date(f.started_at) <= now);
   const last = events[0] || null;
 
@@ -408,7 +418,6 @@ function firstBadge(f) {
   const photo = f.has_photo ? photos.get(f.id) : null;
   return photo ? `<span class="hero-icon photo"><img src="${esc(photo)}" alt=""></span>` : `<span class="hero-icon">${icon("star")}</span>`;
 }
-const firstTitle = (f) => f.title;
 function firstWhen(f) {
   const baby = currentBaby();
   const age = baby.birth_date && f.happened_on >= baby.birth_date ? ` · ${ageLabel(baby.birth_date, f.happened_on)}` : "";
@@ -449,17 +458,15 @@ function viewPage() {
 function pageDiapers() {
   const now = new Date(), rows = sortBy(ofBaby("diapers"), "changed_at");
   if (!rows.length) return `<div class="empty">Aucune couche notée dans les ${HISTORY_DAYS} derniers jours.</div>`;
-  const groups = new Map();
-  for (const d of rows) { const k = dayKey(d.changed_at); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(d); }
-  return [...groups.values()].map((list) => {
+  return groupRows(rows, "changed_at").map((list) => {
     const wet = list.filter((d) => d.wet).length, dirty = list.filter((d) => d.dirty).length;
     return `<div class="day-group">
         <div class="day-head"><h3>${esc(capitalize(dayLabel(list[0].changed_at, now)))}</h3>
           <span class="day-total">${plural(list.length, "couche")} <small>· ${plural(wet, "mouillée")}, ${plural(dirty, "sale")}</small></span></div>
         <div class="card list">${list.map((d) => {
-    const who = caregiver(d.caregiver_id), unsent = queue.all().some((q) => q.id === d.id);
+    const who = caregiver(d.caregiver_id);
     return `<button class="feed-row" data-action="edit-couches" data-id="${d.id}">
-            <span class="feed-main"><span class="feed-time">${fmtTime(d.changed_at)}${who ? ` <span class="meta">· ${esc(who.name)}</span>` : ""}${unsent ? ` <span class="unsent" title="Pas encore envoyé">${icon("cloudUp")}</span>` : ""}</span></span>
+            <span class="feed-main"><span class="feed-time">${fmtTime(d.changed_at)}${who ? ` <span class="meta">· ${esc(who.name)}</span>` : ""}${unsentMark(d.id)}</span></span>
             <span class="hero-tags row-tags"><span class="tag">${diaperLabel(d)}</span>${d.rash ? `<span class="tag warn">Érythème</span>` : ""}</span>
             <span class="chev">${icon("right")}</span></button>`;
   }).join("")}</div>
@@ -473,7 +480,7 @@ function pageFirsts() {
   return `<div class="card list">${rows.map((f) => `
       <button class="feed-row first-row" data-action="edit-premieres" data-id="${f.id}">
         ${firstBadge(f)}
-        <span class="feed-main"><span class="feed-time wrap">${esc(firstTitle(f))}</span>
+        <span class="feed-main"><span class="feed-time wrap">${esc(f.title)}</span>
           <span class="meta">${esc(firstWhen(f))}</span>
           ${f.note ? `<span class="meta note-preview">${esc(f.note)}</span>` : ""}</span>
         <span class="chev">${icon("right")}</span></button>`).join("")}</div>`;
@@ -666,8 +673,8 @@ function saveModules() {
 }
 
 // --------------------------------------------------------------- historique ---
-function delta(cur, prev, label) {
-  if (cur == null || prev == null || !prev) return `<span class="delta">${label}</span>`;
+function delta(cur, prev) {
+  if (cur == null || prev == null || !prev) return `<span class="delta"></span>`;
   const pct = Math.round(((cur - prev) / prev) * 100);
   const ic = pct > 0 ? "up" : pct < 0 ? "downArrow" : "equal";
   return `<span class="delta">${icon(ic)} ${pct === 0 ? "stable" : `${Math.abs(pct)} %`}</span>`;
@@ -678,14 +685,13 @@ function compareCard() {
   const now = new Date(), feeds = babyFeeds();
   const days = state.range === "week" ? 7 : 14;
   const { current: a, previous: b } = comparePeriods(feeds, days, now);
-  const vs = `vs les ${days} jours d'avant`;
   const num = (x, f) => (x == null ? "—" : f(x));
   return `<section class="tiles">
-      <div class="tile"><p class="tile-label">Volume par jour</p><p class="tile-num">${num(a.total, amount)}</p>${delta(a.total, b.total, "")}</div>
-      <div class="tile"><p class="tile-label">Boires par jour</p><p class="tile-num">${num(a.count, (x) => (Math.round(x * 10) / 10).toString().replace(".", ","))}</p>${delta(a.count, b.count, "")}</div>
-      <div class="tile"><p class="tile-label">Intervalle moyen</p><p class="tile-num">${fmtInterval(a.interval)}</p>${delta(a.interval, b.interval, "")}</div>
+      <div class="tile"><p class="tile-label">Volume par jour</p><p class="tile-num">${num(a.total, amount)}</p>${delta(a.total, b.total)}</div>
+      <div class="tile"><p class="tile-label">Boires par jour</p><p class="tile-num">${num(a.count, (x) => (Math.round(x * 10) / 10).toString().replace(".", ","))}</p>${delta(a.count, b.count)}</div>
+      <div class="tile"><p class="tile-label">Intervalle moyen</p><p class="tile-num">${fmtInterval(a.interval)}</p>${delta(a.interval, b.interval)}</div>
     </section>
-    <p class="meta tiles-note">Moyennes des ${days} derniers jours complets, ${vs}.</p>`;
+    <p class="meta tiles-note">Moyennes des ${days} derniers jours complets, vs les ${days} jours d'avant.</p>`;
 }
 
 function chartCard() {
@@ -739,7 +745,7 @@ function patternCard() {
  *  de haut en bas, un trait par boire. Les habitudes (et les nuits) sautent aux yeux.
  *  Lecture seule, à la demande de Maxime : un toucher accidentel ne doit rien ouvrir. */
 function weekCalendarCard() {
-  const now = new Date(), feeds = babyFeeds();
+  const now = new Date(), events = feedEvents();
   const days = Array.from({ length: 7 }, (_, i) => addDays(startOfDay(now), i - 6));
   const minuteOf = (d) => { const x = new Date(d); return x.getHours() * 60 + x.getMinutes(); };
   const pct = (min) => `${(min / 1440) * 100}%`;
@@ -747,7 +753,7 @@ function weekCalendarCard() {
     <div class="cal-day ${i === 6 ? "today" : ""}"><span>${esc(fr(d, { weekday: "short" }).replace(".", ""))}</span><b>${d.getDate()}</b></div>`).join("");
   const cols = days.map((d, i) => {
     const key = dayKey(d);
-    const marks = feedEvents().filter((f) => dayKey(f.started_at) === key).map((f) =>
+    const marks = events.filter((f) => dayKey(f.started_at) === key).map((f) =>
       `<span class="cal-mark ${f.kind}" style="top:${pct(minuteOf(f.started_at))}" title="${esc(`${fmtTime(f.started_at)}, ${f._nursing ? nursingSummary(f) : amount(f.amount_ml)}`)}"></span>`).join("");
     return `<div class="cal-col ${i === 6 ? "today" : ""}">${marks}${i === 6 ? `<span class="cal-now" style="top:${pct(minuteOf(now))}"></span>` : ""}</div>`;
   }).join("");
@@ -788,7 +794,7 @@ function viewHistory() {
   const list = groups.length ? groups.map((g) => `
       <div class="day-group">
         <div class="day-head"><h3>${esc(capitalize(dayLabel(g.date, now)))}</h3>
-          <span class="day-total">${amount(g.total)} <small>· ${plural(g.count, "boire")}</small></span></div>
+          <span class="day-total">${g.total ? `${amount(g.total)} <small>· ${plural(g.count, "boire")}</small>` : `<small>${plural(g.count, "tétée")}</small>`}</span></div>
         <div class="card list">${g.feeds.map((f) => feedRow(f, maxAmount(g.feeds))).join("")}</div>
       </div>`).join("")
     : `<div class="empty">Aucun boire sur cette période.</div>`;
@@ -997,6 +1003,7 @@ function renderSheet() {
     : t === "babies" ? sheetBabies() : sheetNewBaby();
   const form = FORM_SHEETS.has(t);
   el.classList.toggle("form-sheet", form);
+  el.classList.remove("wheel-open");          // la roulette est toujours redessinée fermée
   el.className = el.className.replace(/\bmod-\S+/g, "") + (form ? ` mod-${t}` : "");
   el.innerHTML = form ? body : `<div class="grab"></div>${body}`;
 }
@@ -1032,6 +1039,17 @@ function shortDay(d, now = new Date()) {
   return ago === 0 ? "Aujourd'hui" : ago === 1 ? "Hier" : fr(new Date(d), { weekday: "short", day: "numeric", month: "short" });
 }
 const timeLabel = (d) => { const x = d || new Date(); return `${shortDay(x)} ${fmtTime(x)}`; };
+/** Heure de début de la fiche ouverte : celle choisie, sinon le premier démarrage du minuteur ; null = « maintenant ». */
+function sheetStart() {
+  const s = state.sheet;
+  if (s.time) return s.time;
+  const t = !s.id && (s.type === "nursing" || s.type === "pump") ? timerOf(s.type) : null;
+  return t?.startedAt ? new Date(t.startedAt) : null;
+}
+function sheetTimeLabel() {
+  const s = state.sheet, d = sheetStart();
+  return !d && !s.manual && (s.type === "nursing" || s.type === "pump") ? "Au démarrage" : timeLabel(d);
+}
 
 function wheelHtml(when, now) {
   const span = Math.max(WHEEL_DAYS, daysAgo(when, now) + 1);
@@ -1065,9 +1083,9 @@ function wheelRead() {
   const span = Number(wheel.dataset.span), now = new Date();
   const d = addDays(startOfDay(now), -(span - 1 - wheelIndex(wheelCol("jour"))));
   d.setHours(wheelIndex(wheelCol("heure")), wheelIndex(wheelCol("minute")), 0, 0);
-  if (d > now) { s.time = null; wheelShow(now, true); }
+  if (d > now) { s.time = null; wheelShow(sheetStart() || now, true); }
   else s.time = d;
-  $("#feed-time-label").textContent = timeLabel(s.time);
+  $("#feed-time-label").textContent = sheetTimeLabel();
 }
 
 function toggleWheel() {
@@ -1077,7 +1095,7 @@ function toggleWheel() {
   wheel.hidden = !open;
   $("#feed-when-row").classList.toggle("open", open);
   $("#sheet")?.classList.toggle("wheel-open", open);
-  if (open) wheelShow(state.sheet.time || new Date());
+  if (open) wheelShow(sheetStart() || new Date());
 }
 
 let wheelTimer = null;
@@ -1104,11 +1122,7 @@ function sheetFeed() {
     warn = `<p class="sheet-warn">${icon("clock")} Un boire de ${amount(last.amount_ml)} a déjà été noté à ${fmtTime(last.started_at)}${who ? ` par ${esc(who.name)}` : ""}.</p>`;
   }
   return `
-    <div class="sheet-band">
-      <button class="band-btn" data-action="close-sheet" aria-label="Fermer">${icon("x")}</button>
-      <h2>${s.id ? "Modifier le boire" : "Ajouter un boire"}</h2>
-      <button class="band-save" data-action="save-feed" aria-label="Enregistrer">${icon("check")}</button>
-    </div>
+    ${sheetBand(s.id ? "Modifier le boire" : "Ajouter un boire")}
     ${warn}
     <button class="form-row" id="feed-when-row" data-action="toggle-wheel" aria-label="Changer l'heure de début">
       <span class="row-label">Heure de début</span>
@@ -1129,8 +1143,11 @@ function sheetFeed() {
       <span>Utiliser la dernière quantité : ${amount(last.amount_ml)} ?</span>
       <button class="btn-outline" data-action="use-last" data-value="${formatAmount(last.amount_ml, u)}">Oui</button>
     </div>` : ""}
-    ${s.id ? `<div class="sheet-foot"><button class="btn ghost danger" data-action="delete-feed">${icon("trash")} ${s.confirmDelete ? "Toucher encore pour supprimer" : "Supprimer ce boire"}</button></div>` : ""}`;
+    ${deleteFoot(s, "ce boire")}`;
 }
+
+/** Quantité retapée telle quelle à la modification : on garde les ml d'origine (pas d'aller-retour oz → ml). */
+const sameOrNew = (ml, before) => (before != null && formatAmount(before, unit()) === formatAmount(ml, unit()) ? Number(before) : ml);
 
 /** Garde la saisie propre : chiffres seulement (une décimale en oz). */
 function cleanAmount(raw) {
@@ -1150,13 +1167,11 @@ function saveFeed() {
   const when = s.time || new Date();
   if (when.getTime() > Date.now() + 2 * 60000) { toast("L'heure est dans le futur"); return; }
   const existing = s.id ? state.feeds.find((f) => f.id === s.id) : null;
-  // Modifier sans toucher à la quantité : on garde les ml d'origine (pas d'aller-retour oz → ml).
-  const sameAmount = existing && formatAmount(existing.amount_ml, u) === formatAmount(ml, u);
   const feed = {
     id: s.id || uuid(),
     baby_id: state.babyId,
     kind: s.kind,
-    amount_ml: sameAmount ? Number(existing.amount_ml) : ml,
+    amount_ml: sameOrNew(ml, existing?.amount_ml),
     started_at: when.toISOString(),
     caregiver_id: existing ? existing.caregiver_id : me()?.id || null,
     deleted_at: null,
@@ -1164,19 +1179,6 @@ function saveFeed() {
   commitFeed(feed);
   closeSheet();
   toast(s.id ? "Boire modifié" : `Boire ajouté · ${amount(feed.amount_ml)}`, { kind: "ok" });
-}
-
-function deleteFeed() {
-  const s = state.sheet;
-  if (!s.confirmDelete) {
-    s.confirmDelete = true;
-    $('[data-action="delete-feed"]').innerHTML = `${icon("trash")} Toucher encore pour supprimer`;
-    return;
-  }
-  const existing = state.feeds.find((f) => f.id === s.id);
-  if (existing) commitFeed({ ...existing, deleted_at: new Date().toISOString() });
-  closeSheet();
-  toast("Boire supprimé");
 }
 
 /** Écrit un boire : à l'écran et sur l'appareil tout de suite, vers Supabase dès que possible. */
@@ -1213,8 +1215,9 @@ const noteRow = (value) => `<label class="form-row tall">
       <span class="row-label">Note</span>
       <textarea id="sheet-note" class="row-input" rows="2" placeholder="Ajouter" maxlength="2000">${esc(value || "")}</textarea>
     </label>`;
+const sheetPhoto = (s) => (s.photo === undefined ? (s.id && s.hasPhoto ? photos.get(s.id) : null) : s.photo);
 function photoRow(s) {
-  const cur = s.photo === undefined ? (s.id && s.hasPhoto ? photos.get(s.id) : null) : s.photo;
+  const cur = sheetPhoto(s);
   return `<div class="form-row">
       <span class="row-label">Photo</span>
       <span class="row-photo">
@@ -1352,17 +1355,17 @@ function saveSheet() {
 }
 function deleteSheet() {
   const s = state.sheet;
-  if (s.type === "feed") return deleteFeed();
   if (!s.confirmDelete) {
     s.confirmDelete = true;
     $('[data-action="delete-sheet"]').innerHTML = `${icon("trash")} Toucher encore pour supprimer`;
     return;
   }
-  const table = { diaper: "diapers", growth: "growth", first: "firsts", nursing: "nursings", pump: "pumpings", allergen: "allergen_exposures" }[s.type];
+  const table = { feed: "feeds", diaper: "diapers", growth: "growth", first: "firsts", nursing: "nursings", pump: "pumpings", allergen: "allergen_exposures" }[s.type];
   const existing = state[table].find((r) => r.id === s.id);
-  if (existing) commitRow(table, { ...existing, deleted_at: new Date().toISOString() });
+  const gone = existing && { ...existing, deleted_at: new Date().toISOString() };
+  if (gone) { if (table === "feeds") commitFeed(gone); else commitRow(table, gone); }
   closeSheet();
-  toast("Supprimé");
+  toast(table === "feeds" ? "Boire supprimé" : "Supprimé");
 }
 
 /** Écrit une ligne d'un module : à l'écran et sur l'appareil tout de suite, vers
@@ -1377,7 +1380,8 @@ function commitRow(table, row) {
   const { photo, ...local } = payload;
   if ("photo" in payload) { local.has_photo = !!photo; if (photo) photos.set(row.id, payload.updated_at, photo); else photos.remove(row.id); }
   else local.has_photo = !!(state[table].find((r) => r.id === row.id)?.has_photo ?? has_photo);
-  if (local.has_photo && photos.get(row.id)) photos.set(row.id, payload.updated_at, photos.get(row.id));   // même version que la ligne
+  if (local.deleted_at) photos.remove(row.id);
+  else if (local.has_photo && photos.get(row.id)) photos.set(row.id, payload.updated_at, photos.get(row.id));   // même version que la ligne
   state[table] = state[table].filter((r) => r.id !== row.id);
   if (!local.deleted_at) state[table].push(local);
   queue.push({ ...payload, _t: table });
@@ -1387,17 +1391,20 @@ function commitRow(table, row) {
   flushQueue();
 }
 
-/** Photo d'une mesure ou d'une première : 640 px de côté au plus (≈ 60 Ko). */
-function shrinkFreePhoto(file) {
+/** Réduit une image sur l'appareil, en JPEG « data: ». Photo d'une fiche : entière, 640 px de côté
+ *  au plus (≈ 60 Ko). Photo du bébé (`square`) : recadrée au centre, 256 px (≈ 15 Ko) — elle est
+ *  gardée avec le bébé et suit donc la synchro et le mode hors ligne. */
+function shrinkPhoto(file, { size = 640, square = false, quality = 0.8 } = {}) {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file), img = new Image();
     img.onload = () => {
-      const k = Math.min(1, 640 / Math.max(img.naturalWidth, img.naturalHeight));
+      const w = img.naturalWidth, h = img.naturalHeight, side = Math.min(w, h), k = Math.min(1, size / Math.max(w, h));
       const c = document.createElement("canvas");
-      c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
-      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      c.width = square ? size : Math.round(w * k); c.height = square ? size : Math.round(h * k);
+      if (square) c.getContext("2d").drawImage(img, (w - side) / 2, (h - side) / 2, side, side, 0, 0, size, size);
+      else c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
       URL.revokeObjectURL(url);
-      resolve(c.toDataURL("image/jpeg", 0.8));
+      resolve(c.toDataURL("image/jpeg", quality));
     };
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("image illisible")); };
     img.src = url;
@@ -1416,7 +1423,7 @@ async function loadPhotos() {
         const { data, error } = await supabase.from(table).select("id,photo,updated_at").in("id", want.slice(i, i + 8));
         if (error) return;
         for (const r of data) if (r.photo) photos.set(r.id, r.updated_at, r.photo);
-        if (state.view === "app") { renderMain(); if (state.sheet && FORM_SHEETS.has(state.sheet.type)) { /* la fiche garde sa saisie */ } }
+        if (state.view === "app") renderMain();
       }
     }
   } finally { loadingPhotos = false; }
@@ -1489,7 +1496,6 @@ function sheetNursing() {
   const s = state.sheet, now = new Date(), t = s.id ? null : timerOf("nursing");
   const prev = sortBy(babyNursings(), "started_at").find((n) => n.id !== s.id);
   const lastSide = s.id ? prev?.last_side : (t?.lastSide ? null : prev?.last_side);   // « dernier sein » de la tétée d'avant
-  const startAt = s.time || (t?.startedAt ? new Date(t.startedAt) : null);
   const side = (k) => {
     const running = t?.running === k, sec = t ? timerSeconds(t, k) : 0;
     return `<div class="side ${running ? "live" : ""}">
@@ -1505,23 +1511,25 @@ function sheetNursing() {
     ${s.manual ? "" : `<button class="link center small" data-action="nursing-manual">${icon("pencil")} Entrer les minutes à la main</button>`}
     <button class="form-row" id="feed-when-row" data-action="toggle-wheel" aria-label="Changer l'heure de début">
       <span class="row-label">Heure de début</span>
-      <span class="row-value" id="feed-time-label">${esc(startAt ? timeLabel(startAt) : "Au démarrage")}</span>
+      <span class="row-value" id="feed-time-label">${esc(sheetTimeLabel())}</span>
     </button>
-    ${wheelHtml(startAt || now, now)}
+    ${wheelHtml(sheetStart() || now, now)}
     ${s.manual ? `<div class="form-row"><span class="row-label">Dernier sein</span>
       <span class="pillrow tight">${["left", "right"].map((k) => `<button class="pill small maternel ${s.lastSide === k ? "on" : ""}" data-action="nursing-last" data-side="${k}">${SIDE[k]}</button>`).join("")}</span></div>` : ""}
     ${s.id ? deleteFoot(s, "cette tétée") : t ? `<div class="sheet-foot"><button class="btn ghost danger" data-action="nursing-abandon">${icon("trash")} Abandonner cette tétée</button></div>` : ""}`;
 }
 function saveNursing() {
   const s = state.sheet, t = s.id ? null : timerOf("nursing");
+  const existing = s.id ? state.nursings.find((n) => n.id === s.id) : null;
+  // Minutes laissées telles quelles à la modification : on garde les secondes d'origine.
+  const secs = (id, before) => { const m = numVal(id) || 0; return before != null && m === Math.round(before / 60) ? before : m * 60; };
   let left, right, lastSide = s.lastSide;
-  if (s.manual) { left = (numVal("n-left") || 0) * 60; right = (numVal("n-right") || 0) * 60; }
+  if (s.manual) { left = secs("n-left", existing?.left_sec); right = secs("n-right", existing?.right_sec); }
   else { left = timerSeconds(t, "left"); right = timerSeconds(t, "right"); lastSide = t?.lastSide || null; }
   if (!left && !right) { toast("Démarre un côté, ou entre les minutes"); return; }
   if (!lastSide) lastSide = right ? "right" : "left";
-  const when = s.time || (t?.startedAt ? new Date(t.startedAt) : new Date());
+  const when = sheetStart() || new Date();
   if (when.getTime() > Date.now() + 2 * 60000) { toast("L'heure est dans le futur"); return; }
-  const existing = s.id ? state.nursings.find((n) => n.id === s.id) : null;
   commitRow("nursings", { id: s.id || uuid(), baby_id: state.babyId, started_at: when.toISOString(), left_sec: Math.round(left), right_sec: Math.round(right),
     last_side: lastSide, caregiver_id: existing ? existing.caregiver_id : me()?.id || null, deleted_at: null });
   if (!s.id) timerMemory.clear("nursing");
@@ -1557,16 +1565,14 @@ function homePump() {
 function pagePump() {
   const now = new Date(), rows = sortBy(babyPumpings(), "started_at");
   if (!rows.length) return `<div class="empty">Aucune séance notée dans les ${HISTORY_DAYS} derniers jours.</div>`;
-  const groups = new Map();
-  for (const p of rows) { const k = dayKey(p.started_at); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(p); }
-  return [...groups.values()].map((list) => `<div class="day-group">
+  return groupRows(rows, "started_at").map((list) => `<div class="day-group">
       <div class="day-head"><h3>${esc(capitalize(dayLabel(list[0].started_at, now)))}</h3>
         <span class="day-total">${amount(list.reduce((a, p) => a + Number(p.amount_ml), 0))} <small>· ${plural(list.length, "séance")}</small></span></div>
       <div class="card list">${list.map((p) => {
-    const who = caregiver(p.caregiver_id), unsent = queue.all().some((q) => q.id === p.id);
+    const who = caregiver(p.caregiver_id);
     const sides = p.left_ml != null || p.right_ml != null ? `G ${formatAmount(p.left_ml || 0, unit())} · D ${formatAmount(p.right_ml || 0, unit())}` : "";
     return `<button class="feed-row" data-action="edit-tirelait" data-id="${p.id}">
-        <span class="feed-main"><span class="feed-time">${fmtTime(p.started_at)}${who ? ` <span class="meta">· ${esc(who.name)}</span>` : ""}${unsent ? ` <span class="unsent">${icon("cloudUp")}</span>` : ""}</span>
+        <span class="feed-main"><span class="feed-time">${fmtTime(p.started_at)}${who ? ` <span class="meta">· ${esc(who.name)}</span>` : ""}${unsentMark(p.id)}</span>
           <span class="meta">${esc([p.duration_sec ? fmtDur(p.duration_sec) : "", sides].filter(Boolean).join(" · "))}</span></span>
         <span class="feed-amount">${formatAmount(p.amount_ml, unit())}<small> ${unit()}</small></span>
         <span class="chev">${icon("right")}</span></button>`;
@@ -1580,7 +1586,6 @@ function openPumpSheet(row) {
 }
 function sheetPump() {
   const s = state.sheet, u = unit(), now = new Date(), t = s.id ? null : timerOf("pump");
-  const startAt = s.time || (t?.startedAt ? new Date(t.startedAt) : null);
   const running = t?.running === "all", sec = t ? timerSeconds(t, "all") : 0;
   const num = (id, value, label) => `<span class="row-amount"><input type="text" id="${id}" inputmode="${u === "oz" ? "decimal" : "numeric"}" autocomplete="off" placeholder="Ajouter" value="${esc(value)}" data-input="pump-amount" aria-label="${label}"><small>${u}</small></span>`;
   return `${sheetBand(s.id ? "Modifier la séance" : "Tire-lait")}
@@ -1596,9 +1601,9 @@ function sheetPump() {
     </div>
     <button class="form-row" id="feed-when-row" data-action="toggle-wheel" aria-label="Changer l'heure de début">
       <span class="row-label">Heure de début</span>
-      <span class="row-value" id="feed-time-label">${esc(startAt ? timeLabel(startAt) : "Au démarrage")}</span>
+      <span class="row-value" id="feed-time-label">${esc(sheetTimeLabel())}</span>
     </button>
-    ${wheelHtml(startAt || now, now)}
+    ${wheelHtml(sheetStart() || now, now)}
     ${s.mode === "sides" ? `<label class="form-row"><span class="row-label">Quantité gauche</span>${num("p-left", s.left, "gauche")}</label>
     <label class="form-row"><span class="row-label">Quantité droite</span>${num("p-right", s.right, "droite")}</label>
     <div class="form-row total-row"><span class="row-label">Total</span><span class="row-value" id="pump-total">${pumpTotalLabel()}</span></div>`
@@ -1612,21 +1617,24 @@ function pumpTotalLabel() {
 }
 function savePump() {
   const s = state.sheet, u = unit(), t = s.id ? null : timerOf("pump");
-  const duration = s.manual ? (numVal("p-minutes") || 0) * 60 : t ? timerSeconds(t, "all") : 0;
+  const existing = s.id ? state.pumpings.find((p) => p.id === s.id) : null;
+  const minutes = numVal("p-minutes") || 0;
+  // Durée et quantités laissées telles quelles à la modification : on garde les valeurs d'origine.
+  const duration = !s.manual ? (t ? timerSeconds(t, "all") : 0)
+    : existing && minutes === Math.round(existing.duration_sec / 60) ? existing.duration_sec : minutes * 60;
   let left_ml = null, right_ml = null, amount_ml;
   if (s.mode === "sides") {
     const l = numVal("p-left"), r = numVal("p-right");
     if (l == null && r == null) { toast("Entre une quantité"); return; }
-    left_ml = fromUnit(l || 0, u); right_ml = fromUnit(r || 0, u); amount_ml = Math.round((left_ml + right_ml) * 10) / 10;
+    left_ml = sameOrNew(fromUnit(l || 0, u), existing?.left_ml); right_ml = sameOrNew(fromUnit(r || 0, u), existing?.right_ml); amount_ml = Math.round((left_ml + right_ml) * 10) / 10;
   } else {
     const tot = numVal("p-total");
     if (tot == null) { toast("Entre une quantité"); return; }
-    amount_ml = fromUnit(tot, u);
+    amount_ml = sameOrNew(fromUnit(tot, u), existing?.amount_ml);
   }
   if (amount_ml > 2000 || left_ml > 1000 || right_ml > 1000) { toast("Quantité trop grande"); return; }
-  const when = s.time || (t?.startedAt ? new Date(t.startedAt) : new Date());
+  const when = sheetStart() || new Date();
   if (when.getTime() > Date.now() + 2 * 60000) { toast("L'heure est dans le futur"); return; }
-  const existing = s.id ? state.pumpings.find((p) => p.id === s.id) : null;
   commitRow("pumpings", { id: s.id || uuid(), baby_id: state.babyId, started_at: when.toISOString(), duration_sec: Math.round(duration), amount_ml, left_ml, right_ml,
     caregiver_id: existing ? existing.caregiver_id : me()?.id || null, deleted_at: null });
   if (!s.id) timerMemory.clear("pump");
@@ -1715,14 +1723,13 @@ function homeAllergens() {
 
 function exposureRow(e, def, stats) {
   const bad = e.reaction && e.reaction !== "none", who = caregiver(e.caregiver_id), photo = e.has_photo ? photos.get(e.id) : null;
-  const unsent = queue.all().some((q) => q.id === e.id);
   // La réaction de cette entrée est-elle imputée à cet allergène-ci (et non à un autre de la même bouchée) ?
   const blamed = bad && [...stats.values()].some((st) => st.reaction?.id === e.id && alDef(st.key)?.id === def.id);
   const labels = def.kinds || (e.allergens || []).length > 1 ? e.allergens.map((k) => alLabel(k)).join(", ") : "";
   const sub = [bad ? [REACTIONS[e.reaction], ...(e.symptoms || []).map((x) => SYMPTOMS[x] || x)].join(" · ") : "", labels, e.food || ""].filter(Boolean);
   return `<button class="feed-row al-row" data-action="edit-allergenes" data-id="${e.id}">
       <i class="al-mark ${blamed ? `bad sev-${e.reaction}` : ""}"></i>
-      <span class="feed-main"><span class="feed-time">${esc(fr(new Date(e.given_at), { day: "numeric", month: "short" }))} · ${fmtTime(e.given_at)}${who ? ` <span class="meta">· ${esc(who.name)}</span>` : ""}${unsent ? ` <span class="unsent" title="Pas encore envoyé">${icon("cloudUp")}</span>` : ""}</span>
+      <span class="feed-main"><span class="feed-time">${esc(fr(new Date(e.given_at), { day: "numeric", month: "short" }))} · ${fmtTime(e.given_at)}${who ? ` <span class="meta">· ${esc(who.name)}</span>` : ""}${unsentMark(e.id)}</span>
         ${sub.length ? `<span class="meta ${blamed ? `bad sev-${e.reaction}` : ""}">${esc(sub.join(" · "))}</span>` : ""}</span>
       ${photo ? `<img src="${esc(photo)}" alt="" class="photo-thumb">` : ""}
       <span class="chev">${icon("right")}</span></button>`;
@@ -1788,7 +1795,6 @@ function openAllergenSheet(row, preset = null) {
 /** La fiche se redessine à chaque choix ; la roulette se referme avec elle. */
 function redrawAllergen(toEnd = false) {
   const x = $(".al-kinds-row")?.scrollLeft || 0;
-  $("#sheet")?.classList.remove("wheel-open");
   renderSheetKeep();
   const row = $(".al-kinds-row"); if (row) row.scrollLeft = toEnd ? row.scrollWidth : x;      // la rangée des variétés reste où elle était
 }
@@ -1832,7 +1838,7 @@ function sheetAllergen() {
       + `<button class="pill small" data-action="al-custom">Autre…</button>`;
   }
   const bad = s.reaction !== "none";
-  const cur = s.photo === undefined ? (s.id && s.hasPhoto ? photos.get(s.id) : null) : s.photo;
+  const cur = sheetPhoto(s);
   return `${sheetBand(s.id ? "Modifier" : "Allergène")}
     <div class="al-grid">${grid}</div>
     <div class="al-kinds-row ${fam ? "" : "hidden"}">${kinds}</div>
@@ -1977,7 +1983,7 @@ function lifetime(babyId = state.babyId) {
 /** « 12 345 ml » ; au-delà de 10 L on ajoute les litres. En oz : « 417 oz ». */
 function lifetimeLabel(ml) {
   const group = (n) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, "\u202f");
-  if (unit() === "oz") return `${group(Math.round(ml / 29.5735))} oz`;
+  if (unit() === "oz") return `${group(Math.round(ml / ML_PER_OZ))} oz`;
   return `${group(Math.round(ml))} ml${ml >= 10000 ? ` · ${(Math.round(ml / 100) / 10).toString().replace(".", ",")} L` : ""}`;
 }
 
@@ -2054,7 +2060,6 @@ function scheduleReload() {
   reloadTimer = setTimeout(() => loadAll(), 200);
 }
 
-const onFeedChange = (payload) => onRowChange("feeds", payload);
 function onRowChange(table, payload) {
   if (payload.eventType === "DELETE") { scheduleReload(); return; }
   const row = payload.new;
@@ -2077,7 +2082,7 @@ function subscribeRealtime() {
   if (ch) supabase.removeChannel(ch);
   let firstJoin = true;
   state.channel = supabase.channel("kenda-" + state.user.id)
-    .on("postgres_changes", { event: "*", schema: "public", table: "feeds" }, onFeedChange)
+    .on("postgres_changes", { event: "*", schema: "public", table: "feeds" }, (p) => onRowChange("feeds", p))
     .on("postgres_changes", { event: "*", schema: "public", table: "diapers" }, (p) => onRowChange("diapers", p))
     .on("postgres_changes", { event: "*", schema: "public", table: "growth" }, scheduleReload)   // la photo n'est pas dans l'événement
     .on("postgres_changes", { event: "*", schema: "public", table: "firsts" }, scheduleReload)
@@ -2207,7 +2212,13 @@ async function submitReset() {
   } finally { btn.disabled = false; btn.textContent = "Enregistrer"; }
 }
 
+let joining = false;
 async function createOrJoinBaby(join) {
+  if (joining) return;
+  joining = true;
+  try { await createOrJoinBabyOnce(join); } finally { joining = false; }
+}
+async function createOrJoinBabyOnce(join) {
   const err = $("#ob-error"); err.textContent = "";
   const name = $("#ob-name").value.trim();
   if (!name) { err.textContent = "Entre ton prénom."; return; }
@@ -2234,23 +2245,6 @@ async function createOrJoinBaby(join) {
   state.tab = "home";
   await loadAll(res.data);
   toast(join ? "Suivi rejoint" : "Suivi créé", { kind: "ok" });
-}
-
-/** Photo du bébé : recadrée en carré et réduite à 256 px sur l'appareil (≈ 15 Ko),
- *  puis gardée avec le bébé — elle suit donc la synchro et le mode hors ligne. */
-function shrinkPhoto(file) {
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file), img = new Image();
-    img.onload = () => {
-      const side = Math.min(img.naturalWidth, img.naturalHeight), size = 256;
-      const c = document.createElement("canvas"); c.width = c.height = size;
-      c.getContext("2d").drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, size, size);
-      URL.revokeObjectURL(url);
-      resolve(c.toDataURL("image/jpeg", 0.82));
-    };
-    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("image illisible")); };
-    img.src = url;
-  });
 }
 
 /** Réglages du bébé : appliqués à l'écran tout de suite, annulés si Supabase refuse. */
@@ -2290,15 +2284,16 @@ function resetToSignedOut() {
 
 // Hors ligne on peut tout faire sur les boires ; ce qui touche au compte, aux
 // bébés et aux réglages partagés attend le réseau.
-const ONLINE_ONLY = new Set(["remove-photo", "create-baby", "join-baby", "save-baby-name", "set-unit", "toggle-kind", "save-my-name", "forgot", "save-modules", "set-sex", "set-weight-unit", "set-length-unit", "save-birth"]);
+const ONLINE_ONLY = new Set(["remove-photo", "create-baby", "join-baby", "save-baby-name", "set-unit", "save-my-name", "forgot", "save-modules", "set-sex", "set-weight-unit", "set-length-unit"]);
 const isOffline = () => !navigator.onLine || !state.online;
+const offlineToast = () => toast("Hors ligne — possible dès que le réseau revient", { ms: 3200 });
 
 document.addEventListener("click", async (e) => {
   const btn = e.target.closest("[data-action]");
   if (!btn) return;
   const a = btn.dataset.action;
   if (ONLINE_ONLY.has(a) && isOffline()) {
-    toast("Hors ligne — possible dès que le réseau revient", { ms: 3200 });
+    offlineToast();
     if (navigator.onLine) wakeUp();      // peut-être revenu sans qu'on le sache
     return;
   }
@@ -2394,8 +2389,6 @@ document.addEventListener("click", async (e) => {
     case "toggle-wheel": return toggleWheel();
     case "close-sheet": return closeSheet();
     case "toggle-list": state.listOpen = !state.listOpen; return renderMain();
-    case "save-feed": return saveFeed();
-    case "delete-feed": return deleteFeed();
 
     // bébés
     case "open-babies": return openSheet({ type: "babies" });
@@ -2414,17 +2407,12 @@ document.addEventListener("click", async (e) => {
     case "set-unit":
       if (btn.dataset.unit !== unit()) updateBaby({ unit: btn.dataset.unit }, `Unité : ${btn.dataset.unit}`);
       return;
-    case "toggle-kind": {
-      const k = btn.dataset.kind, cur = enabledKinds();
-      const next = cur.includes(k) ? cur.filter((x) => x !== k) : Object.keys(KINDS).filter((x) => x === k || cur.includes(x));
-      if (!next.length) { toast("Garde au moins un type actif"); return; }
-      return updateBaby({ kinds: next });
-    }
     case "remove-photo": return updateBaby({ photo: null }, "Photo retirée");
     case "save-my-name": return saveMyName();
     case "copy-code":
-      navigator.clipboard?.writeText(currentBaby().join_code);
-      return toast("Code copié", { kind: "ok" });
+      try { await navigator.clipboard.writeText(currentBaby().join_code); toast("Code copié", { kind: "ok" }); }
+      catch { toast("Copie impossible ici — note le code"); }
+      return;
     case "share-code": {
       const b = currentBaby();
       navigator.share?.({ text: `Rejoins le suivi de ${b.name} dans Kenda (${location.origin}) avec le code ${b.join_code}.` }).catch(() => {});
@@ -2454,12 +2442,13 @@ document.addEventListener("change", (e) => {
   if (kind === "sheet-photo") {
     const file = e.target.files?.[0];
     if (!file || !state.sheet) return;
-    shrinkFreePhoto(file).then((photo) => { if (state.sheet) { state.sheet.photo = photo; renderSheetKeep(); } })
+    shrinkPhoto(file).then((photo) => { if (state.sheet) { state.sheet.photo = photo; renderSheetKeep(); } })
       .catch(() => toast("Cette image n'a pas pu être lue"));
     return;
   }
   if (kind === "set-birth") {
-    if (isOffline()) { toast("Hors ligne — possible dès que le réseau revient", { ms: 3200 }); renderMain(); return; }
+    e.target.blur();          // renderMain ne redessine pas un champ actif
+    if (isOffline()) { offlineToast(); renderMain(); return; }
     const v = e.target.value;
     if (v && v > todayKey()) { toast("La date de naissance est dans le futur"); renderMain(); return; }
     updateBaby({ birth_date: v || null });
@@ -2468,18 +2457,19 @@ document.addEventListener("change", (e) => {
   if (kind === "baby-photo") {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (isOffline()) { toast("Hors ligne — possible dès que le réseau revient", { ms: 3200 }); return; }
-    shrinkPhoto(file).then((photo) => updateBaby({ photo }, "Photo mise à jour"))
+    if (isOffline()) { offlineToast(); return; }
+    shrinkPhoto(file, { size: 256, square: true, quality: 0.82 }).then((photo) => updateBaby({ photo }, "Photo mise à jour"))
       .catch(() => toast("Cette image n'a pas pu être lue"));
   }
   if (kind === "set-remind") {
-    if (isOffline()) { toast("Hors ligne — possible dès que le réseau revient", { ms: 3200 }); renderMain(); return; }
+    e.target.blur();
+    if (isOffline()) { offlineToast(); renderMain(); return; }
     updateBaby({ remind_after_min: e.target.value ? Number(e.target.value) : null });
   }
 });
 
 document.addEventListener("focusin", (e) => {
-  if (e.target?.id === "feed-amount" && $("#wheel") && !$("#wheel").hidden) toggleWheel();
+  if (e.target?.matches?.("#sheet input:not([type=file]), #sheet textarea") && $("#wheel") && !$("#wheel").hidden) toggleWheel();
 });
 
 document.addEventListener("input", (e) => {
