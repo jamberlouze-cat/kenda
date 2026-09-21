@@ -1,0 +1,11 @@
+/Users/maximechamberland/Claude/Projects/Kenda/.github/workflows/supabase-eveil.yml
+/Users/maximechamberland/Claude/Projects/Kenda/README.md
+/Users/maximechamberland/Claude/Projects/Kenda/_dev/test.html
+/Users/maximechamberland/Claude/Projects/Kenda/index.html
+/Users/maximechamberland/Claude/Projects/Kenda/assets/icon-180.png
+/Users/maximechamberland/Claude/Projects/Kenda/assets/icon-192.png
+/Users/maximechamberland/Claude/Projects/Kenda/assets/icon-512.png
+/Users/maximechamberland/Claude/Projects/Kenda/assets/icon-dev-180.png
+/Users/maximechamberland/Claude/Projects/Kenda/assets/icon-dev-192.png
+/Users/maximechamberland/Claude/Projects/Kenda/assets/icon-dev-512.png
+/Users/maximechamberland/Claude/Projects/Kenda/assets/koala.png

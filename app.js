@@ -13,7 +13,7 @@ import {
   findPatterns, hourHistogram,
 } from "./lib/stats.js";
 
-const VERSION = "1.2.0";
+const VERSION = "1.2.1";
 const DAY = 86400000;
 const HISTORY_DAYS = 31;          // 2 semaines + les 2 d'avant, pour la comparaison
 const KINDS = { maternel: "Lait maternel", formule: "Formule" };
@@ -56,7 +56,7 @@ const state = {
   pending: queue.size(),
   listOpen: true,       // accueil : derniers boires dépliés
   range: "week",        // week | 2weeks
-  metric: "total",      // total | count | interval
+  metric: "total",      // total | count | interval | nursing | nursingTime
   sheet: null,
   authError: "", recovery: false, error: "",
   channel: null,
@@ -385,7 +385,10 @@ function homeDiapers() {
       <p class="hero-tags"><span class="tag">${diaperLabel(last)}</span>${last.rash ? `<span class="tag warn">Érythème</span>` : ""}</p>
     </button>`;
   }
-  return moduleCard("couches", "Couches", "Ajouter une couche", hero, last ? { page: "diapers", label: "Voir l'historique" } : null);
+  const today = ofBaby("diapers").filter((d) => dayKey(d.changed_at) === dayKey(now) && new Date(d.changed_at) <= now);
+  const wet = today.filter((d) => d.wet).length, dirty = today.filter((d) => d.dirty).length;
+  const body = `${hero}${today.length ? `<p class="meta today-line">Aujourd'hui : ${plural(today.length, "couche")} · ${plural(wet, "mouillée")}, ${plural(dirty, "sale")}</p>` : ""}`;
+  return moduleCard("couches", "Couches", "Ajouter une couche", body, last ? { page: "diapers", label: "Voir l'historique" } : null);
 }
 
 // --------------------------------------------------- accueil : croissance ---
@@ -681,46 +684,69 @@ function delta(cur, prev) {
 }
 const fmtInterval = (ms) => (ms == null ? "—" : formatElapsed(ms));
 
+/** Les tétées vues comme des boires dont la « quantité » est la durée (s) : les calculs de lib/stats.js servent tels quels. */
+const nursingFeeds = () => babyNursings().map((n) => ({ started_at: n.started_at, amount_ml: (n.left_sec || 0) + (n.right_sec || 0) }));
+const nursingStats = () => nursingOn() || babyNursings().length > 0;
+const bottleStats = () => bottleOn() || babyFeeds().length > 0 || !nursingStats();
 function compareCard() {
-  const now = new Date(), feeds = babyFeeds();
+  const now = new Date();
   const days = state.range === "week" ? 7 : 14;
-  const { current: a, previous: b } = comparePeriods(feeds, days, now);
   const num = (x, f) => (x == null ? "—" : f(x));
-  return `<section class="tiles">
-      <div class="tile"><p class="tile-label">Volume par jour</p><p class="tile-num">${num(a.total, amount)}</p>${delta(a.total, b.total)}</div>
-      <div class="tile"><p class="tile-label">Boires par jour</p><p class="tile-num">${num(a.count, (x) => (Math.round(x * 10) / 10).toString().replace(".", ","))}</p>${delta(a.count, b.count)}</div>
-      <div class="tile"><p class="tile-label">Intervalle moyen</p><p class="tile-num">${fmtInterval(a.interval)}</p>${delta(a.interval, b.interval)}</div>
-    </section>
+  const perDay = (x) => (Math.round(x * 10) / 10).toString().replace(".", ",");
+  const tile = (label, value, d) => `<div class="tile"><p class="tile-label">${label}</p><p class="tile-num">${value}</p>${d}</div>`;
+  let out = "";
+  if (bottleStats()) {
+    const { current: a, previous: b } = comparePeriods(babyFeeds(), days, now);
+    out += `<section class="tiles">
+      ${tile("Volume par jour", num(a.total, amount), delta(a.total, b.total))}
+      ${tile("Boires par jour", num(a.count, perDay), delta(a.count, b.count))}
+      ${tile("Intervalle moyen", fmtInterval(a.interval), delta(a.interval, b.interval))}
+    </section>`;
+  }
+  if (nursingStats()) {
+    const { current: a, previous: b } = comparePeriods(nursingFeeds(), days, now);
+    const each = (x) => (x.total == null || !x.count ? null : x.total / x.count);
+    out += `<section class="tiles">
+      ${tile("Tétées par jour", num(a.count, perDay), delta(a.count, b.count))}
+      ${tile("Allaitement par jour", num(a.total, fmtDur), delta(a.total, b.total))}
+      ${tile("Durée d'une tétée", num(each(a), fmtDur), delta(each(a), each(b)))}
+    </section>`;
+  }
+  return `${out}
     <p class="meta tiles-note">Moyennes des ${days} derniers jours complets, vs les ${days} jours d'avant.</p>`;
 }
-
 function chartCard() {
-  const now = new Date(), feeds = babyFeeds();
+  const now = new Date();
   const days = state.range === "week" ? 7 : 14;
-  const series = dailySeries(feeds, days, now);
-  const pick = { total: (d) => d.total, count: (d) => d.count, interval: (d) => d.avgInterval || 0 }[state.metric];
-  const label = {
-    total: (d) => (d.total ? formatAmount(d.total, unit()) : ""),
-    count: (d) => (d.count ? String(d.count) : ""),
-    interval: (d) => (d.avgInterval ? (Math.round((d.avgInterval / 3600000) * 10) / 10).toString().replace(".", ",") : ""),
-  }[state.metric];
-  const max = Math.max(1, ...series.map(pick));
+  const hours = (ms) => (Math.round((ms / 3600000) * 10) / 10).toString().replace(".", ",");
+  const METRICS = {
+    total: { pill: "Volume", pick: (d) => d.total, label: (d) => (d.total ? formatAmount(d.total, unit()) : ""), caption: `Volume total par jour (${unit()})` },
+    count: { pill: "Fréquence", pick: (d) => d.count, label: (d) => (d.count ? String(d.count) : ""), caption: "Nombre de boires par jour" },
+    interval: { pill: "Intervalle", pick: (d) => d.avgInterval || 0, label: (d) => (d.avgInterval ? hours(d.avgInterval) : ""), caption: "Intervalle moyen entre deux boires (heures)" },
+    nursing: { nursing: true, pill: "Tétées", pick: (d) => d.count, label: (d) => (d.count ? String(d.count) : ""), caption: "Nombre de tétées par jour" },
+    nursingTime: { nursing: true, pill: "Durée", pick: (d) => d.total, label: (d) => (d.total ? String(Math.round(d.total / 60)) : ""), caption: "Allaitement par jour (minutes)" },
+  };
+  // Biberon et allaitement : les trois mesures du biberon + les tétées. Allaitement seul : tétées et durée.
+  const shown = [...(bottleStats() ? ["total", "count", "interval"] : []), ...(nursingStats() ? (bottleStats() ? ["nursing"] : ["nursing", "nursingTime"]) : [])];
+  const metric = shown.includes(state.metric) ? state.metric : shown[0];
+  const m = METRICS[metric];
+  const series = dailySeries(m.nursing ? nursingFeeds() : babyFeeds(), days, now);
+  const max = Math.max(1, ...series.map(m.pick));
   const bars = series.map((d) => `
     <div class="bar-col ${d.isToday ? "today" : ""}">
-      <span class="bar-val">${label(d)}</span>
-      <span class="bar-track"><span class="bar-fill" style="height:${(pick(d) / max) * 100}%"></span></span>
+      <span class="bar-val">${m.label(d)}</span>
+      <span class="bar-track"><span class="bar-fill" style="height:${(m.pick(d) / max) * 100}%"></span></span>
       <span class="bar-x">${days === 7 ? fr(d.date, { weekday: "short" }).replace(".", "") : d.date.getDate()}</span>
     </div>`).join("");
-  const caption = { total: `Volume total par jour (${unit()})`, count: "Nombre de boires par jour", interval: "Intervalle moyen entre deux boires (heures)" }[state.metric];
-  const pill = (m, l) => `<button class="pill small ${state.metric === m ? "on lilac" : ""}" data-action="metric" data-metric="${m}">${l}</button>`;
+  const pill = (k) => `<button class="pill small ${metric === k ? "on lilac" : ""}" data-action="metric" data-metric="${k}">${METRICS[k].pill}</button>`;
   return `<section class="card chart-card">
-      <div class="pillrow">${pill("total", "Volume")}${pill("count", "Fréquence")}${pill("interval", "Intervalle")}</div>
+      <div class="pillrow">${shown.map(pill).join("")}</div>
       <div class="bars n${days}">${bars}</div>
-      <p class="meta center">${caption} · aujourd'hui en bleu (journée en cours)</p>
+      <p class="meta center">${m.caption} · aujourd'hui en bleu (journée en cours)</p>
     </section>`;
 }
-
 function patternCard() {
+  if (!bottleStats()) return "";   // l'horaire type se calcule sur les biberons
   const now = new Date(), feeds = babyFeeds();
   const days = state.range === "week" ? 7 : 14;
   const p = findPatterns(feeds, now, days);
