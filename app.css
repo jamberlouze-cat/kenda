@@ -521,7 +521,11 @@ textarea.row-input { line-height: 1.35; }
 .side-name { font-size: 14px; color: var(--muted); }
 .side .btn-outline { display: inline-flex; align-items: center; gap: 6px; padding: 9px 20px; border-radius: 999px; }
 .side .btn-outline .ic { width: 16px; height: 16px; }
-.side .row-amount input { width: 72px; text-align: center; background: var(--cream-dark); border-radius: 12px; }  /* champ vide visible, sans « 0 » à effacer */
+/* Pas d'alignement sur la ligne de base ici : dans Safari, la ligne de base d'un champ VIDE n'est pas celle d'un champ
+   rempli, et toute la fiche bougeait de quelques pixels au premier caractère. Hauteur fixe + centrage = rien ne bouge. */
+.side .row-amount { align-items: center; }
+.side .row-amount input { width: 72px; height: 44px; line-height: 32px; box-sizing: border-box; text-align: center; background: var(--cream-dark); border-radius: 12px; }
+.side .row-amount small { position: relative; top: 4px; }
 .link.small { font-size: 13px; padding: 2px 0 6px; display: inline-flex; align-items: center; gap: 5px; }
 .link.small.center { display: flex; justify-content: center; width: 100%; }
 .link.small .ic { width: 15px; height: 15px; }

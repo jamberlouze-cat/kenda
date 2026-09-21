@@ -2455,7 +2455,7 @@ document.addEventListener("click", async (e) => {
 function focusField(id) {
   const el = document.getElementById(id);
   if (!el) return;
-  el.focus({ preventScroll: true });
+  el.focus();   // sans preventScroll : sinon iOS reporte son recadrage au premier caractère tapé, et la fiche bouge
   el.select();
 }
 function renderSheetKeep() {
