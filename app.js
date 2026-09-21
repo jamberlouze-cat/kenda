@@ -1526,7 +1526,7 @@ function sheetNursing() {
     const running = t?.running === k, sec = t ? timerSeconds(t, k) : 0;
     return `<div class="side ${running ? "live" : ""}">
         <span class="last-side ${lastSide === k ? "" : "hidden"}">dernier sein</span>
-        ${s.manual ? `<span class="row-amount"><input type="text" id="n-${k}" inputmode="numeric" autocomplete="off" value="${s[k] || ""}" placeholder="0" aria-label="${SIDE[k]}, minutes"><small>min</small></span>`
+        ${s.manual ? `<span class="row-amount"><input type="text" id="n-${k}" inputmode="numeric" autocomplete="off" value="${s[k] || ""}" aria-label="${SIDE[k]}, minutes"><small>min</small></span>`
     : `<span class="timer" data-timer="nursing:${k}">${fmtClock(sec)}</span>`}
         <span class="side-name">${SIDE[k]}</span>
         ${s.manual ? "" : `<button class="btn-outline" data-action="nursing-toggle" data-side="${k}">${running ? `${icon("pause")} Pause` : sec ? `${icon("play")} Reprendre` : `${icon("play")} Démarrer`}</button>`}
@@ -1620,7 +1620,7 @@ function sheetPump() {
       <button class="${s.mode === "total" ? "on" : ""}" data-action="pump-mode" data-mode="total">Total</button>
     </div>
     <div class="sides one">
-      ${s.manual ? `<div class="side"><span class="row-amount"><input type="text" id="p-minutes" inputmode="numeric" autocomplete="off" value="${s.minutes || ""}" placeholder="0" aria-label="Durée, minutes"><small>min</small></span><span class="side-name">Durée</span></div>`
+      ${s.manual ? `<div class="side"><span class="row-amount"><input type="text" id="p-minutes" inputmode="numeric" autocomplete="off" value="${s.minutes || ""}" aria-label="Durée, minutes"><small>min</small></span><span class="side-name">Durée</span></div>`
     : `<div class="side ${running ? "live" : ""}"><span class="timer" data-timer="pump:all">${fmtClock(sec)}</span>
         <button class="btn-outline" data-action="pump-toggle">${running ? `${icon("pause")} Pause` : sec ? `${icon("play")} Reprendre` : `${icon("play")} Démarrer`}</button></div>
       <button class="link center small" data-action="pump-manual">${icon("pencil")} Entrer la durée à la main</button>`}
